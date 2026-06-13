@@ -1,0 +1,177 @@
+---
+title: "Authenticate with the Gate.io API SDK"
+sidebarTitle: "Authentication"
+description: "Generate Gate.com API credentials, pass them to the SDK, and understand how HMAC signing works for REST requests and WebSocket connections."
+---
+
+Every private Gate.com API operation — placing orders, reading balances, managing positions — requires a signed request that proves the call comes from you. The `gateio-api` SDK handles this signing automatically once you supply your credentials at construction time. You never call a sign function yourself; the SDK intercepts each outgoing private request, attaches the correct HMAC-SHA512 signature and timestamp, and sends it on your behalf. This page explains where credentials come from, how to pass them to each client, and how to tune the signing behaviour for your environment.
+
+## Creating API Credentials
+
+Log in to Gate.com and go to [API Key Management](https://www.gate.com/myaccount/api_key_manage). Click **Create API Key**, give it a descriptive name, and choose the minimum set of permissions your application requires:
+
+- **Read** — for fetching market data, balances, order history
+- **Trade** — for placing, modifying, and cancelling orders
+- **Withdrawal** — only if your application needs to initiate withdrawals (treat this with extreme care)
+
+Once the key is created, copy both the **API Key** and the **API Secret** immediately. The secret is only shown once.
+
+<Warning>
+  Keep your API secret out of source control at all times. Do not hardcode credentials in your application files, `.env` files committed to a repository, or CI/CD configuration that gets logged. Use environment variables, a secrets manager (such as AWS Secrets Manager, HashiCorp Vault, or Doppler), or an encrypted secrets store. If a secret is ever exposed, revoke the API key immediately from the Gate.com dashboard.
+</Warning>
+
+## Passing Credentials to `RestClient`
+
+Supply `apiKey` and `apiSecret` in the options object passed to the `RestClient` constructor. The recommended approach reads them from environment variables so the values are never in your source files:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+});
+```
+
+Set the environment variables in your shell or deployment environment before running your application:
+
+```bash
+export GATE_API_KEY="your_api_key_here"
+export GATE_API_SECRET="your_api_secret_here"
+```
+
+Once the client is initialised with credentials, every call to a private endpoint is automatically signed. Public endpoints (such as `getSpotTicker()`) work without credentials and do not trigger any signing logic.
+
+## Passing Credentials to `WebsocketClient`
+
+The `WebsocketClient` accepts the same credential fields. Authentication for private WebSocket channels (such as `spot.orders` and `spot.balances`) is handled transparently:
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+});
+
+// Private channel — authentication happens automatically
+ws.subscribe('spot.balances', 'spotV4');
+
+ws.on('update', (data) => {
+  console.log('Account update:', data);
+});
+```
+
+## How HMAC-SHA512 Signing Works
+
+When you call any private REST endpoint, the SDK constructs a canonical string from the HTTP method, request path, query string, and body hash, then signs it using HMAC-SHA512 with your `apiSecret` as the key. The resulting signature, along with your `apiKey` and a millisecond timestamp, are added as request headers before the call is dispatched. Gate.com's servers verify the signature on receipt.
+
+For WebSocket connections, the SDK similarly signs the authentication payload at connection time. You do not interact with any of this directly — it is entirely internal to the client.
+
+## Testnet Configuration
+
+Gate.com provides a futures testnet environment for safe experimentation. Enable it by setting `baseUrlKey` to `'futuresTestnet'` in the client options:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.GATE_TESTNET_API_KEY,
+  apiSecret: process.env.GATE_TESTNET_API_SECRET,
+  baseUrlKey: 'futuresTestnet',
+});
+```
+
+For the `WebsocketClient`, pass `useTestnet: true`:
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.GATE_TESTNET_API_KEY,
+  apiSecret: process.env.GATE_TESTNET_API_SECRET,
+  useTestnet: true,
+});
+```
+
+<Note>
+  Testnet API keys are separate from live keys. Create testnet credentials through the futures testnet portal — live credentials will not work against the testnet endpoints.
+</Note>
+
+## `RestClientOptions` Reference
+
+These are the authentication-related fields in the `RestClientOptions` interface. Pass any of them in the object you hand to the `RestClient` or `WebsocketClient` constructor.
+
+<ParamField body="apiKey" type="string">
+  Your Gate.com API key, obtained from the [API Key Management](https://www.gate.com/myaccount/api_key_manage) page. Required for all private (authenticated) REST endpoints and WebSocket channels.
+</ParamField>
+
+<ParamField body="apiSecret" type="string">
+  Your Gate.com API secret, shown once at key creation time. The SDK uses this to generate the HMAC-SHA512 signature on every private request. Store it in an environment variable or secrets manager — never hardcode it.
+</ParamField>
+
+<ParamField body="recvWindow" type="number">
+  The maximum age (in milliseconds) of a signed request that Gate.com's servers will accept. If a request arrives outside this window — due to clock drift between your server and Gate.com — it will be rejected. Defaults to Gate.com's global value. Increase this only if you are seeing timestamp-related errors in environments with unreliable system clocks.
+</ParamField>
+
+<ParamField body="strictParamValidation" type="boolean" default="false">
+  When set to `true`, the SDK throws an error if any parameter passed to a request method is `undefined`. This can help catch bugs during development where a variable is accidentally left uninitialised before being passed to an API call.
+</ParamField>
+
+<ParamField body="customSignMessageFn" type="(message: string, secret: string) => Promise<string>">
+  An optional function that replaces the SDK's default HMAC-SHA512 implementation. Node.js's built-in `crypto.createHmac` is significantly faster than browser-compatible crypto implementations. If you are running in Node.js and need maximum signing throughput — for example, a high-frequency trading system sending many authenticated requests per second — provide a custom function using `crypto.createHmac`:
+
+  ```typescript
+  import { createHmac } from 'crypto';
+  import { RestClient } from 'gateio-api';
+
+  const client = new RestClient({
+    apiKey: process.env.GATE_API_KEY,
+    apiSecret: process.env.GATE_API_SECRET,
+    customSignMessageFn: async (message: string, secret: string) => {
+      return createHmac('sha512', secret).update(message).digest('hex');
+    },
+  });
+  ```
+</ParamField>
+
+## Full Configuration Example
+
+The following example brings all of the above together using environment variables, strict validation, and a high-performance custom sign function:
+
+```typescript
+import { createHmac } from 'crypto';
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  // Credentials from environment — never hardcoded
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+
+  // Reject requests that contain undefined parameters
+  strictParamValidation: true,
+
+  // Optional: wider receive window for environments with clock drift
+  recvWindow: 10000,
+
+  // Optional: use Node.js native crypto for faster HMAC signing
+  customSignMessageFn: async (message: string, secret: string) => {
+    return createHmac('sha512', secret).update(message).digest('hex');
+  },
+});
+
+// Authenticated request — signed automatically
+const balances = await client.getSpotAccounts();
+console.log('Spot balances:', balances);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card icon="rocket" title="Quickstart" href="/quickstart">
+    See a complete working example from installation to your first API call.
+  </Card>
+  <Card icon="book" title="Gate.com API Reference" href="https://www.gate.com/docs/developers/apiv4/en/">
+    Full documentation for all REST endpoints and WebSocket channels.
+  </Card>
+</CardGroup>

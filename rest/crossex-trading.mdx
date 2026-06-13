@@ -1,0 +1,282 @@
+---
+title: "Cross-Exchange (CrossEx) Trading via Gate.io SDK"
+sidebarTitle: "CrossEx Trading"
+description: "Gate.com's CrossEx feature lets you trade across multiple exchanges. Use the RestClient to manage CrossEx orders, positions, and account settings."
+---
+
+CrossEx (Cross-Exchange) is Gate.com's multi-exchange trading layer. It allows you to place and manage orders on **Binance, OKX, Bybit, Kraken, and Gate.com** from a single unified account — eliminating the need to maintain separate API connections and balances on each exchange. The `RestClient` maps every CrossEx endpoint to a typed method. All CrossEx methods require authentication, with the exception of `getCrossExSymbols()` and `getCrossExRiskLimits()`.
+
+<Note>
+  CrossEx operates in two account modes: **cross-exchange mode** (one collateral pool shared across all exchanges) and **isolated-exchange mode** (separate pools per exchange). Switch modes with `updateCrossExAccount()`.
+</Note>
+
+## Market Reference Data
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+
+// GET /crossex/rule/symbols — tradable symbols across all connected exchanges
+const symbols = await client.getCrossExSymbols();
+
+// Filter by specific symbols (comma-separated)
+const btcSymbols = await client.getCrossExSymbols({
+  symbols: 'BINANCE_SPOT_BTC_USDT,OKX_SPOT_BTC_USDT',
+});
+
+// Risk limit tiers per symbol
+const riskLimits = await client.getCrossExRiskLimits({
+  symbols: 'BINANCE_FUTURES_BTC_USDT',
+});
+```
+
+<Tip>
+  CrossEx symbol names use the format `{EXCHANGE}_{BUSINESS}_{BASE}_{QUOTE}`, for example `BINANCE_FUTURES_BTC_USDT` or `OKX_SPOT_ETH_USDT`. Use `getCrossExSymbols()` to discover all valid names.
+</Tip>
+
+## Account Management
+
+```typescript
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// GET /crossex/accounts — balances across all connected exchanges
+const accounts = await client.getCrossExAccounts();
+
+// Filter by exchange in isolated mode
+const binanceAccount = await client.getCrossExAccounts({
+  exchange_type: 'BINANCE',
+});
+
+// Account ledger
+// GET /crossex/account_book
+const ledger = await client.getCrossExAccountBook({
+  coin: 'USDT',
+  limit: 100,
+  from: Date.now() - 86400_000, // past 24 h (milliseconds)
+});
+
+// Update account settings (position mode, account mode, exchange)
+// PUT /crossex/accounts
+await client.updateCrossExAccount({
+  position_mode: 'SINGLE',         // 'SINGLE' | 'DUAL'
+  account_mode: 'CROSS_EXCHANGE',  // 'CROSS_EXCHANGE' | 'ISOLATED_EXCHANGE'
+  exchange_type: 'BINANCE',        // exchange to configure
+});
+```
+
+## Transfers
+
+CrossEx supports moving assets between Gate.com subaccounts and connected exchange accounts.
+
+```typescript
+// Supported transfer coins
+// GET /crossex/transfers/coin
+const coins = await client.getCrossExTransferCoins({ coin: 'USDT' });
+
+// Transfer USDT from Gate spot to CrossEx Binance account
+// POST /crossex/transfers
+const transfer = await client.createCrossExTransfer({
+  coin: 'USDT',
+  amount: '1000',
+  from: 'SPOT',               // Gate.com spot wallet
+  to: 'CROSSEX_BINANCE',      // CrossEx Binance account
+  text: 'my-transfer-ref-001',
+});
+console.log('Transfer ID:', transfer.tx_id);
+
+// Transfer history
+// GET /crossex/transfers
+const transferHistory = await client.getCrossExTransferHistory({
+  coin: 'USDT',
+  limit: 50,
+  from: Date.now() - 86400_000 * 7, // past week (milliseconds)
+});
+```
+
+Valid `from`/`to` values include: `SPOT`, `CROSSEX`, `CROSSEX_BINANCE`, `CROSSEX_OKX`, `CROSSEX_GATE`, `CROSSEX_BYBIT`, `CROSSEX_KRAKEN`.
+
+## Orders
+
+### Placing an Order
+
+```typescript
+// POST /crossex/orders
+const order = await client.createCrossExOrder({
+  symbol: 'BINANCE_FUTURES_BTC_USDT', // exchange + market + pair
+  side: 'BUY',                        // 'BUY' | 'SELL'
+  type: 'LIMIT',                      // 'LIMIT' | 'MARKET' (default LIMIT)
+  qty: '0.001',                       // order quantity in base currency
+  price: '60000',                     // limit price
+  time_in_force: 'GTC',               // 'GTC' | 'IOC' | 'FOK' | 'POC'
+  position_side: 'LONG',              // 'LONG' | 'SHORT' | 'NONE'
+  text: 'my-order-ref-001',
+});
+
+console.log('CrossEx Order ID:', order.order_id);
+```
+
+### Market Buy (Spot)
+
+```typescript
+// Spot market buy — use quote_qty instead of qty
+const marketBuy = await client.createCrossExOrder({
+  symbol: 'BINANCE_SPOT_BTC_USDT',
+  side: 'BUY',
+  type: 'MARKET',
+  quote_qty: '100',  // spend 100 USDT
+  time_in_force: 'IOC',
+});
+```
+
+### Modifying an Order
+
+```typescript
+// PUT /crossex/orders/{order_id}
+await client.modifyCrossExOrder({
+  order_id: '123456789',
+  qty: '0.002',
+  price: '61000',
+});
+```
+
+### Cancelling an Order
+
+```typescript
+// DELETE /crossex/orders/{order_id}
+await client.cancelCrossExOrder('123456789');
+```
+
+### Querying Orders
+
+```typescript
+// Single order
+// GET /crossex/orders/{order_id}
+const order = await client.getCrossExOrder('123456789');
+
+// All open orders
+// GET /crossex/open_orders
+const openOrders = await client.getCrossExOpenOrders({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  exchange_type: 'BINANCE',
+});
+
+// Order history (closed orders)
+// GET /crossex/history_orders
+const historyOrders = await client.getCrossExHistoryOrders({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  limit: 100,
+  from: Date.now() - 86400_000 * 30, // past 30 days (milliseconds)
+});
+```
+
+## Positions
+
+```typescript
+// All open futures positions
+// GET /crossex/positions
+const positions = await client.getCrossExPositions({
+  exchange_type: 'BINANCE',
+});
+
+// Position history (closed positions)
+// GET /crossex/history_positions
+const positionHistory = await client.getCrossExHistoryPositions({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  limit: 50,
+  from: Date.now() - 86400_000 * 7,
+});
+
+// Margin positions
+const marginPositions = await client.getCrossExMarginPositions({
+  exchange_type: 'OKX',
+});
+
+// Close a position
+// POST /crossex/position
+await client.closeCrossExPosition({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  position_side: 'LONG',
+});
+```
+
+## Leverage
+
+```typescript
+// Set leverage for a futures symbol
+// POST /crossex/positions/leverage
+await client.setCrossExPositionLeverage({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  leverage: '10',
+});
+
+// Get current leverage settings
+// GET /crossex/positions/leverage
+const leverages = await client.getCrossExPositionLeverage({
+  symbols: 'BINANCE_FUTURES_BTC_USDT,OKX_FUTURES_BTC_USDT',
+});
+
+// Margin position leverage (for margin trading)
+// POST /crossex/margin_positions/leverage
+await client.setCrossExMarginPositionLeverage({
+  symbol: 'BINANCE_MARGIN_BTC_USDT',
+  leverage: '5',
+});
+
+const marginLeverages = await client.getCrossExMarginPositionLeverage({
+  symbols: 'BINANCE_MARGIN_BTC_USDT',
+});
+```
+
+## Convert (Flash Swap)
+
+CrossEx also supports an instant convert flow between two assets on a connected exchange.
+
+```typescript
+// Step 1 — Get a quote
+// POST /crossex/convert/quote
+const quote = await client.createCrossExConvertQuote({
+  exchange_type: 'GATE',
+  from_coin: 'USDT',
+  to_coin: 'BTC',
+  from_amount: '500',
+});
+console.log('Quote ID:', quote.quote_id);
+console.log('Expected BTC:', quote.to_amount);
+
+// Step 2 — Accept the quote and create the order
+// POST /crossex/convert/orders
+const convertOrder = await client.createCrossExConvertOrder({
+  quote_id: quote.quote_id,
+});
+console.log('Convert order status:', convertOrder.status);
+```
+
+## ADL Rank & Fees
+
+```typescript
+// Auto-deleveraging rank for a symbol
+const adlRank = await client.getCrossExAdlRank({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+});
+
+// Your CrossEx fee rates
+const fees = await client.getCrossExFeeRate();
+
+// Coin discount rates used in margin calculations
+const discountRates = await client.getCrossExCoinDiscountRate({
+  coin: 'BTC',
+  exchange_type: 'BINANCE',
+});
+```
+
+## Trade History
+
+```typescript
+// GET /crossex/history_trades
+const trades = await client.getCrossExHistoryTrades({
+  symbol: 'BINANCE_FUTURES_BTC_USDT',
+  limit: 100,
+  from: Date.now() - 86400_000 * 7,
+});
+```

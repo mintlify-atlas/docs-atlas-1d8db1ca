@@ -1,0 +1,348 @@
+---
+title: "TypeScript Type Definitions in the Gate.io SDK"
+sidebarTitle: "Type Definitions"
+description: "Overview of all TypeScript request, response, and WebSocket types exported from gateio-api. Covers how to use them for type-safe trading integrations."
+---
+
+The `gateio-api` package ships with a comprehensive set of TypeScript type definitions that cover every request parameter, API response shape, and WebSocket message structure in the SDK. Using these types brings three concrete benefits: your IDE can autocomplete field names as you type, the TypeScript compiler rejects missing required fields or incorrectly typed values at build time, and future SDK upgrades that change an interface will surface breaking changes immediately rather than silently at runtime.
+
+<Tip>
+  For the full, searchable type browser with TSDoc comments, visit [tsdocs.dev/docs/gateio-api](https://tsdocs.dev/docs/gateio-api). Every interface, type alias, and enum exported from the package is listed there with its field-level documentation.
+</Tip>
+
+## How Types Are Exported
+
+All request types, response types, and WebSocket types are re-exported from the single `gateio-api` entry point. You never need to import from a deep path like `gateio-api/src/types/request/spot` — just import from the package root:
+
+```typescript
+import type { SubmitSpotOrderReq, SpotOrder } from 'gateio-api';
+```
+
+The main `index.ts` re-exports every module so your imports stay clean and stable across SDK versions.
+
+## Type Categories
+
+<Accordion title="Request Types">
+  Request types describe the parameters accepted by each REST endpoint or WebSocket API call. They live in `src/types/request/` and are grouped by product area. Every module is re-exported from the package root.
+
+  **Available request modules:**
+
+  | Module | Product Area |
+  |--------|-------------|
+  | `request/spot` | Spot & margin trading |
+  | `request/futures` | Perpetual futures |
+  | `request/delivery` | Delivery futures |
+  | `request/options` | Options contracts |
+  | `request/margin` | Isolated margin |
+  | `request/marginuni` | Unified margin |
+  | `request/wallet` | Wallet & deposits/withdrawals |
+  | `request/withdrawal` | Withdrawal management |
+  | `request/account` | Account settings |
+  | `request/subaccount` | Sub-account management |
+  | `request/earn` | Earn / staking products |
+  | `request/earnuni` | Unified earn |
+  | `request/autoinvest` | Auto-invest plans |
+  | `request/flashswap` | Flash swap |
+  | `request/collateralLoan` | Collateral loans |
+  | `request/multicollateralLoan` | Multi-collateral loans |
+  | `request/unified` | Unified account |
+  | `request/rebate` | Referral & rebate |
+  | `request/crossex` | Cross-exchange settlement |
+  | `request/alpha` | Alpha products |
+  | `request/otc` | OTC trading |
+  | `request/p2pMerchant` | P2P merchant |
+  | `request/tradfi` | TradFi products |
+
+  **Example: `SubmitSpotOrderReq`**
+
+  ```typescript
+  import type { SubmitSpotOrderReq } from 'gateio-api';
+
+  // SubmitSpotOrderReq — parameters for placing a spot order
+  const order: SubmitSpotOrderReq = {
+    currency_pair: 'BTC_USDT',
+    side: 'buy',
+    amount: '0.001',
+    price: '60000',
+    type: 'limit',
+    time_in_force: 'gtc',
+    account: 'spot',
+  };
+  ```
+
+  **Example: `GetSpotOrdersReq`**
+
+  ```typescript
+  import type { GetSpotOrdersReq } from 'gateio-api';
+
+  // GetSpotOrdersReq — parameters for listing spot orders
+  const query: GetSpotOrdersReq = {
+    currency_pair: 'ETH_USDT',
+    status: 'open',
+    limit: 50,
+    account: 'unified',
+  };
+  ```
+
+  **Example: `GetSpotOrderBookReq`**
+
+  ```typescript
+  import type { GetSpotOrderBookReq } from 'gateio-api';
+
+  const req: GetSpotOrderBookReq = {
+    currency_pair: 'BTC_USDT',
+    limit: 20,
+    with_id: true,
+  };
+  ```
+</Accordion>
+
+<Accordion title="Response Types">
+  Response types describe the shape of data returned by REST API calls. They live in `src/types/response/` and mirror the request module organisation. Pass them as explicit type annotations or let TypeScript infer them from the client's return types.
+
+  **Available response modules:**
+
+  | Module | Product Area |
+  |--------|-------------|
+  | `response/spot` | Spot markets, orders, balances |
+  | `response/futures` | Perpetual futures |
+  | `response/delivery` | Delivery futures |
+  | `response/options` | Options contracts |
+  | `response/margin` | Isolated margin |
+  | `response/marginuni` | Unified margin |
+  | `response/wallet` | Wallet & transfers |
+  | `response/account` | Account info |
+  | `response/subaccount` | Sub-account data |
+  | `response/earn` | Earn products |
+  | `response/earnuni` | Unified earn |
+  | `response/flashswap` | Flash swap quotes & orders |
+  | `response/collateralloan` | Collateral loan details |
+  | `response/multicollateralLoan` | Multi-collateral loan details |
+  | `response/unified` | Unified account balances |
+  | `response/rebate` | Rebate records |
+  | `response/crossex` | Cross-exchange data |
+  | `response/alpha` | Alpha product responses |
+  | `response/otc` | OTC responses |
+  | `response/p2pMerchant` | P2P merchant data |
+  | `response/tradfi` | TradFi responses |
+
+  **Example: `SpotOrder`**
+
+  ```typescript
+  import type { SpotOrder } from 'gateio-api';
+
+  // SpotOrder — shape of a spot order returned by the REST API
+  // Key fields:
+  // id?: string                                — exchange-assigned order ID
+  // status?: 'open' | 'closed' | 'cancelled'  — current order state
+  // currency_pair: string                      — e.g. 'BTC_USDT'
+  // side: 'buy' | 'sell'
+  // amount: string                             — order quantity (string to preserve precision)
+  // price?: string                             — limit price
+  // filled_total?: string                      — total quote value filled
+  // avg_deal_price?: string                    — volume-weighted average fill price
+  // finish_as?: 'open' | 'filled' | 'cancelled' | 'ioc' | 'poc' | 'stp'
+
+  function printOrder(order: SpotOrder): void {
+    console.log(`${order.id}: ${order.status} — filled ${order.filled_total}`);
+  }
+  ```
+
+  **Example: `SpotTicker`**
+
+  ```typescript
+  import type { SpotTicker } from 'gateio-api';
+
+  function formatTicker(t: SpotTicker): string {
+    return `${t.currency_pair}  last=${t.last}  24h vol=${t.base_volume}`;
+  }
+  ```
+</Accordion>
+
+<Accordion title="WebSocket Client Types">
+  These types control the `WebsocketClient` constructor and describe the shape of every real-time event you receive.
+
+  **`WSClientConfigurableOptions`**
+
+  The configuration interface accepted by the `WebsocketClient` constructor. All fields are optional.
+
+  ```typescript
+  import type { WSClientConfigurableOptions } from 'gateio-api';
+
+  const opts: WSClientConfigurableOptions = {
+    apiKey: process.env.GATE_API_KEY,
+    apiSecret: process.env.GATE_API_SECRET,
+    useTestnet: false,
+    recvWindow: 5000,
+    pingInterval: 10000,
+    pongTimeout: 5000,
+    reconnectTimeout: 500,
+    reauthWSAPIOnReconnect: true,
+  };
+  ```
+
+  Key fields:
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `apiKey` | `string` | Gate.io API key for authenticated channels |
+  | `apiSecret` | `string` | Gate.io API secret for signing |
+  | `useTestnet` | `boolean` | Connect to testnet WebSocket URLs |
+  | `recvWindow` | `number` | Signature validity window in ms |
+  | `pingInterval` | `number` | How often to send heartbeat pings (ms) |
+  | `pongTimeout` | `number` | How long to wait for a pong before reconnecting (ms) |
+  | `reconnectTimeout` | `number` | Delay before attempting reconnection (ms) |
+  | `reauthWSAPIOnReconnect` | `boolean` | Re-authenticate WS API automatically after reconnect |
+  | `customSignMessageFn` | `(msg, secret) => Promise<string>` | Custom HMAC signing function |
+
+  **`WsKey` and `FuturesWsKey`**
+
+  See the [WsKeys reference](/api-reference/ws-keys) for the full listing of connection key types.
+</Accordion>
+
+<Accordion title="WebSocket API Types">
+  The WS API types describe the request and response shapes for Gate.io's real-time order management API. These let you place, amend, cancel, and query orders over WebSocket with full type coverage.
+
+  **`WSAPIResponse<T>`**
+
+  Every WS API call resolves to a `WSAPIResponse<T>` where `T` is the specific result type. The generic wrapper carries metadata alongside the result:
+
+  ```typescript
+  import type { WSAPIResponse, WSAPISpotOrder } from 'gateio-api';
+
+  // WSAPIResponse<T> shape:
+  // {
+  //   wsKey: WsKey;                        — which connection produced this response
+  //   header: WSAPIResponseHeader<TChannel>; — response_time, status, channel, event
+  //   data: { result: T };                 — the actual payload
+  //   request_id: string;                  — auto-generated correlation ID
+  // }
+
+  async function placeOrder(ws: WebsocketAPIClient): Promise<void> {
+    const response: WSAPIResponse<WSAPISpotOrder> =
+      await ws.sendWSAPIRequest(
+        'spotV4',
+        'spot.order_place',
+        {
+          currency_pair: 'BTC_USDT',
+          side: 'buy',
+          amount: '0.001',
+          price: '60000',
+          type: 'limit',
+        },
+      );
+
+    console.log('Order ID:', response.data.result.id);
+    console.log('Status:', response.header.status); // '200' if successful
+  }
+  ```
+
+  **Spot WS API request types**
+
+  | Type | Topic | Description |
+  |------|-------|-------------|
+  | `WSAPISpotOrderPlaceReq` | `spot.order_place` | Place a new spot order |
+  | `WSAPISpotOrderCancelReq` | `spot.order_cancel` | Cancel an order by ID |
+  | `WSAPISpotOrderCancelIdsReq` | `spot.order_cancel_ids` | Cancel multiple orders by ID |
+  | `WSAPISpotOrderCancelCPReq` | `spot.order_cancel_cp` | Cancel all orders for a currency pair |
+  | `WSAPISpotOrderAmendReq` | `spot.order_amend` | Amend price/amount of an open order |
+  | `WSAPISpotOrderStatusReq` | `spot.order_status` | Query a single order's current state |
+  | `WSAPISpotOrderListReq` | `spot.order_list` | List open or closed orders |
+
+  **Futures WS API request types**
+
+  | Type | Topic | Description |
+  |------|-------|-------------|
+  | `WSAPIFuturesOrderPlaceReq` | `futures.order_place` | Place a new futures order |
+  | `WSAPIFuturesOrderCancelReq` | `futures.order_cancel` | Cancel a futures order by ID |
+  | `WSAPIFuturesOrderCancelCPReq` | `futures.order_cancel_cp` | Cancel all orders for a contract |
+  | `WSAPIFuturesOrderAmendReq` | `futures.order_amend` | Amend a futures order |
+  | `WSAPIFuturesOrderListReq` | `futures.order_list` | List futures orders |
+  | `WSAPIFuturesOrderStatusReq` | `futures.order_status` | Query a futures order's state |
+
+  **WS API topic types**
+
+  ```typescript
+  import type { SpotWSAPITopic, FuturesWSAPITopic, WSAPITopic } from 'gateio-api';
+
+  // SpotWSAPITopic — valid topic strings for spot WS API calls:
+  // 'spot.login' | 'spot.order_place' | 'spot.order_cancel' |
+  // 'spot.order_cancel_ids' | 'spot.order_cancel_cp' |
+  // 'spot.order_amend' | 'spot.order_status' | 'spot.order_list'
+
+  // FuturesWSAPITopic — valid topic strings for futures WS API calls:
+  // 'futures.login' | 'futures.order_place' | 'futures.order_batch_place' |
+  // 'futures.order_cancel' | 'futures.order_cancel_cp' | 'futures.order_amend' |
+  // 'futures.order_list' | 'futures.order_status' | 'futures.order_cancel_ids'
+
+  // WSAPITopic — union of both
+  ```
+</Accordion>
+
+## Where Types Live in Source
+
+```
+src/
+├── types/
+│   ├── request/         # REST API request parameter types
+│   │   ├── spot.ts
+│   │   ├── futures.ts
+│   │   ├── delivery.ts
+│   │   ├── options.ts
+│   │   └── ...
+│   ├── response/        # REST API response shape types
+│   │   ├── spot.ts
+│   │   ├── futures.ts
+│   │   └── ...
+│   ├── websockets/      # WebSocket client config & message types
+│   │   ├── client.ts    # WSClientConfigurableOptions, WebsocketClientOptions
+│   │   ├── wsAPI.ts     # WSAPIResponse, WS API request/response types
+│   │   ├── requests.ts  # Internal WebSocket request wrapper types
+│   │   └── events.ts    # WebSocket event types
+│   └── shared.ts        # Shared primitives (GateBaseUrlKey, CurrencyPair, etc.)
+```
+
+## Practical Example: Typed Order Function
+
+This example combines request types, response types, and the REST client to create a fully type-safe order placement helper:
+
+```typescript
+import {
+  RestClient,
+  SubmitSpotOrderReq,
+  SpotOrder,
+} from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+});
+
+async function placeLimitBuy(
+  pair: string,
+  amount: string,
+  price: string,
+): Promise<SpotOrder> {
+  const req: SubmitSpotOrderReq = {
+    currency_pair: pair,
+    side: 'buy',
+    type: 'limit',
+    amount,
+    price,
+    time_in_force: 'gtc',
+    account: 'spot',
+  };
+
+  // The return type is inferred from the SDK's overloaded method signatures
+  const order = await client.submitSpotOrder(req);
+  return order;
+}
+
+// TypeScript enforces the shape at the call site:
+// ✅ valid
+const order = await placeLimitBuy('BTC_USDT', '0.001', '60000');
+console.log(order.id, order.status);
+
+// ❌ compile error — 'side' is required
+// const bad = await client.submitSpotOrder({ currency_pair: 'BTC_USDT', amount: '0.001' });
+```

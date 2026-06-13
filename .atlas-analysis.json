@@ -1,0 +1,129 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Gate.io API SDK",
+  "projectDescription": "A fully-typed Node.js & TypeScript SDK for Gate.com (Gate.io) REST APIs and WebSockets, covering Spot, Margin, Futures, Options, CrossEx, Alpha, and OTC trading.",
+  "theme": "luma",
+  "primaryColor": "#0d152d",
+  "lightColor": "#848c94",
+  "darkColor": "#c9cacf",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "REST API",
+            "pages": [
+              "rest/overview",
+              "rest/spot-trading",
+              "rest/margin-trading",
+              "rest/futures-trading",
+              "rest/options-trading",
+              "rest/crossex-trading",
+              "rest/alpha-otc-trading",
+              "rest/wallet-account"
+            ]
+          },
+          {
+            "group": "WebSockets",
+            "pages": [
+              "websockets/overview",
+              "websockets/data-streams",
+              "websockets/websocket-api"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/error-handling",
+              "guides/logging",
+              "guides/browser-usage",
+              "guides/llm-ai-usage"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Clients",
+            "pages": [
+              "api-reference/rest-client",
+              "api-reference/websocket-client",
+              "api-reference/websocket-api-client"
+            ]
+          },
+          {
+            "group": "Types & Configuration",
+            "pages": [
+              "api-reference/rest-client-options",
+              "api-reference/ws-keys",
+              "api-reference/type-definitions"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Unified RestClient for all Gate.com trading products (Spot, Margin, Futures, Options, CrossEx, Alpha, OTC)",
+    "Full TypeScript support with strongly-typed requests and responses",
+    "Robust WebSocket client with automatic reconnection and heartbeat management",
+    "Promise-driven WebSocket API client (REST-like interface over WebSocket)",
+    "Event-driven WebSocket API via sendWSAPIRequest",
+    "Automatic authentication for private REST and WebSocket calls",
+    "Proxy support via axios integration",
+    "Browser/frontend support via webpack bundle",
+    "Bundled llms.txt for LLM-assisted development",
+    "Automated end-to-end tests with real API calls"
+  ],
+  "publicApiSurface": [
+    "RestClient",
+    "WebsocketClient",
+    "WebsocketAPIClient",
+    "DefaultLogger",
+    "WS_KEY_MAP",
+    "RestClientOptions",
+    "WSClientConfigurableOptions",
+    "WsKey",
+    "FuturesWsKey",
+    "submitNewSpotOrder()",
+    "cancelSpotOrder()",
+    "getSpotOrders()",
+    "getSpotTicker()",
+    "getSpotOrderBook()",
+    "submitSpotOrder()",
+    "getFuturesContracts()",
+    "getFuturesAccount()",
+    "submitFuturesOrder()",
+    "cancelFuturesOrder()",
+    "getMarginAccounts()",
+    "getCrossMarginAccount()",
+    "getOptionsContracts()",
+    "getCrossExSymbols()",
+    "getAlphaCurrencies()",
+    "createOTCQuote()",
+    "getBalances()",
+    "submitWithdrawal()",
+    "createDepositAddress()",
+    "submitTransfer()",
+    "WebsocketClient.subscribe()",
+    "WebsocketClient.unsubscribe()",
+    "WebsocketClient.sendWSAPIRequest()",
+    "WebsocketAPIClient.submitNewSpotOrder()",
+    "WebsocketAPIClient.cancelSpotOrder()",
+    "WebsocketAPIClient.submitNewFuturesOrder()",
+    "WebsocketAPIClient.cancelFuturesOrder()",
+    "WebsocketAPIClient.getFuturesOrderStatus()",
+    "WebsocketAPIClient.getSpotOrderStatus()"
+  ]
+}

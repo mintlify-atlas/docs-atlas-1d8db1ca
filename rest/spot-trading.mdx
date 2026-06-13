@@ -1,0 +1,336 @@
+---
+title: "Spot Trading with the Gate.io RestClient"
+sidebarTitle: "Spot Trading"
+description: "Use the Gate.io SDK RestClient for spot trading: place limit and market orders, manage open orders, query balances, and access market data on Gate.com."
+---
+
+Spot trading on Gate.com covers hundreds of currency pairs. The `RestClient` exposes every spot endpoint as a typed TypeScript method — from public market data that requires no credentials, to authenticated order management and account queries. All request parameter shapes are defined in `src/types/request/spot.ts`, giving you full IDE autocompletion.
+
+## Market Data
+
+These methods are public — no API key required.
+
+### Tickers
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+
+// Single pair ticker
+const btcTicker = await client.getSpotTicker({ currency_pair: 'BTC_USDT' });
+
+// All tickers
+const allTickers = await client.getSpotTicker();
+```
+
+### Order Book
+
+```typescript
+// GET /spot/order_book
+const book = await client.getSpotOrderBook({
+  currency_pair: 'BTC_USDT',
+  interval: '0',   // price precision: '0' | '0.1' | '0.01'
+  limit: 20,        // depth per side, max 50
+  with_id: true,    // include order book update ID
+});
+```
+
+### Candles
+
+```typescript
+// GET /spot/candlesticks
+const candles = await client.getSpotCandles({
+  currency_pair: 'BTC_USDT',
+  interval: '1h',  // '1s' | '10s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '8h' | '1d' | '7d' | '30d'
+  limit: 100,
+});
+```
+
+### Recent Trades
+
+```typescript
+// GET /spot/trades
+const trades = await client.getSpotTrades({
+  currency_pair: 'BTC_USDT',
+  limit: 50,
+});
+```
+
+### Currency Pairs
+
+```typescript
+// All currency pairs listed on Gate.com spot
+const pairs = await client.getSpotCurrencyPairs();
+
+// Single pair detail
+const pair = await client.getSpotCurrencyPair('BTC_USDT');
+```
+
+## Account Queries
+
+These methods require authentication.
+
+### Spot Balances
+
+```typescript
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// All spot account balances
+const balances = await client.getSpotAccounts();
+
+// Single currency balance
+const usdtBalance = await client.getSpotAccounts({ currency: 'USDT' });
+```
+
+### Fee Rates
+
+```typescript
+// Your personal maker/taker fee rates
+const fees = await client.getSpotFeeRates();
+
+// Fees for a specific pair
+const pairFees = await client.getSpotFeeRates({ currency_pair: 'BTC_USDT' });
+
+// Batch fee query for multiple pairs
+const batchFees = await client.getSpotBatchFeeRates({
+  currency_pairs: 'BTC_USDT,ETH_USDT,BNB_USDT',
+});
+```
+
+## Order Management
+
+### Placing Orders
+
+<Tabs>
+  <Tab title="Limit Order">
+    ```typescript
+    // POST /spot/orders
+    const order = await client.submitSpotOrder({
+      currency_pair: 'BTC_USDT',
+      side: 'buy',          // 'buy' | 'sell'
+      type: 'limit',
+      amount: '0.001',      // base currency amount
+      price: '60000',       // limit price in quote currency
+      time_in_force: 'gtc', // 'gtc' | 'ioc' | 'poc' | 'fok'
+      account: 'spot',      // 'spot' | 'margin' | 'cross_margin' | 'unified'
+    });
+
+    console.log('Order ID:', order.id);
+    ```
+  </Tab>
+  <Tab title="Market Order">
+    ```typescript
+    // Market buy — amount is quote currency (USDT)
+    const marketBuy = await client.submitSpotOrder({
+      currency_pair: 'BTC_USDT',
+      side: 'buy',
+      type: 'market',
+      amount: '50',         // spend 50 USDT
+      time_in_force: 'ioc',
+    });
+
+    // Market sell — amount is base currency (BTC)
+    const marketSell = await client.submitSpotOrder({
+      currency_pair: 'BTC_USDT',
+      side: 'sell',
+      type: 'market',
+      amount: '0.001',      // sell 0.001 BTC
+      time_in_force: 'ioc',
+    });
+    ```
+  </Tab>
+  <Tab title="With TP/SL">
+    ```typescript
+    // Limit order with take-profit and stop-loss attached
+    const orderWithTPSL = await client.submitSpotOrder({
+      currency_pair: 'BTC_USDT',
+      side: 'buy',
+      type: 'limit',
+      amount: '0.001',
+      price: '60000',
+      time_in_force: 'gtc',
+      stop_profit: {
+        trigger_price: '65000',
+        order_price: '64900',
+      },
+      stop_loss: {
+        trigger_price: '55000',
+        order_price: '54900',
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Querying Orders
+
+```typescript
+// Open orders for a pair
+const openOrders = await client.getSpotOrders({
+  currency_pair: 'BTC_USDT',
+  status: 'open',
+});
+
+// Filled / cancelled orders
+const finishedOrders = await client.getSpotOrders({
+  currency_pair: 'BTC_USDT',
+  status: 'finished',
+  limit: 50,
+  page: 1,
+});
+
+// Single order by ID
+const order = await client.getSpotOrder({
+  order_id: '123456789',
+  currency_pair: 'BTC_USDT',
+});
+```
+
+### Cancelling Orders
+
+```typescript
+// Cancel a specific order
+await client.cancelSpotOrder({
+  order_id: '123456789',
+  currency_pair: 'BTC_USDT',
+});
+
+// Cancel all open orders for a pair
+await client.cancelSpotOpenOrders({
+  currency_pair: 'BTC_USDT',
+  side: 'buy',   // optional: only cancel buy or sell side
+});
+
+// Batch cancel specific orders
+await client.batchCancelSpotOrders([
+  { currency_pair: 'BTC_USDT', id: '111111' },
+  { currency_pair: 'ETH_USDT', id: '222222' },
+]);
+```
+
+### Batch & Update Operations
+
+```typescript
+// Submit multiple orders in one request
+const batchResult = await client.submitSpotBatchOrders([
+  {
+    currency_pair: 'BTC_USDT',
+    side: 'buy',
+    type: 'limit',
+    amount: '0.001',
+    price: '59000',
+  },
+  {
+    currency_pair: 'ETH_USDT',
+    side: 'buy',
+    type: 'limit',
+    amount: '0.01',
+    price: '3000',
+  },
+]);
+
+// Amend an open order (price and/or amount)
+await client.updateSpotOrder({
+  order_id: '123456789',
+  currency_pair: 'BTC_USDT',
+  price: '61000',
+  amount: '0.002',
+});
+
+// Batch amend multiple open orders
+await client.batchUpdateSpotOrders([
+  {
+    order_id: '111111',
+    currency_pair: 'BTC_USDT',
+    price: '61000',
+  },
+  {
+    order_id: '222222',
+    currency_pair: 'ETH_USDT',
+    price: '3100',
+  },
+]);
+```
+
+<Note>
+  `submitSpotBatchOrders` accepts up to 10 orders per request. Each order in the response array includes its own `succeeded` flag so you can inspect partial failures.
+</Note>
+
+## Advanced Order Types
+
+### Price-Triggered (Auto) Orders
+
+Price-triggered orders fire a child order when the market reaches a specified trigger price. They are managed separately from regular orders.
+
+```typescript
+// Place a price-triggered order
+// POST /spot/price_orders
+await client.submitSpotPriceTriggerOrder({
+  trigger: {
+    price: '58000',
+    rule: '<',          // fire when market price < 58000
+    expiration: 86400,  // trigger window in seconds (24 h)
+  },
+  put: {
+    type: 'limit',
+    side: 'buy',
+    price: '57900',
+    amount: '0.001',
+    account: 'normal',
+    time_in_force: 'gtc',
+  },
+  market: 'BTC_USDT',
+});
+
+// List all active auto orders
+const autoOrders = await client.getSpotAutoOrders({
+  status: 'open',
+  market: 'BTC_USDT',
+});
+```
+
+### Countdown Cancel (Dead-Man's Switch)
+
+Automatically cancels all open orders for a pair after a countdown expires. Call it repeatedly to keep orders alive.
+
+```typescript
+// POST /spot/countdown_cancel_all
+// Cancels all BTC_USDT orders if not renewed within 60 seconds
+await client.submitSpotCountdownOrders({
+  timeout: 60,
+  currency_pair: 'BTC_USDT',
+});
+
+// Pass timeout=0 to disable the countdown
+await client.submitSpotCountdownOrders({
+  timeout: 0,
+  currency_pair: 'BTC_USDT',
+});
+```
+
+<Warning>
+  The countdown is reset each time you call `submitSpotCountdownOrders`. If your process crashes and stops sending renewals, all matched open orders will be cancelled automatically after the timeout.
+</Warning>
+
+## Trading History
+
+```typescript
+// Your personal fill history
+const history = await client.getSpotTradingHistory({
+  currency_pair: 'BTC_USDT',
+  limit: 100,
+  from: Math.floor(Date.now() / 1000) - 86400, // past 24 h
+});
+```
+
+## All Open Orders (Cross-Pair)
+
+```typescript
+// All open orders across every currency pair
+const allOpen = await client.getSpotOpenOrders({
+  page: 1,
+  limit: 100,
+  account: 'spot',
+});
+```

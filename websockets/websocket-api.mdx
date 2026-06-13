@@ -1,0 +1,447 @@
+---
+title: "WebSocket API: Trade Over WebSocket on Gate.com"
+sidebarTitle: "WebSocket API"
+description: "Use Gate.com's WebSocket API to place and cancel orders in real time. Choose between event-driven (sendWSAPIRequest) and promise-based (WebsocketAPIClient) interfaces."
+---
+
+Gate.com's WebSocket API lets you send trading commands — place orders, cancel orders, amend orders, query order status — over the same persistent WebSocket connection used for data streams. Because the commands travel over an already-open socket rather than opening a new HTTP connection for each request, round-trip latency is significantly lower than a traditional REST call. The `gateio-api` SDK exposes this capability through two complementary interfaces: a lower-level **event-driven** method on `WebsocketClient`, and a higher-level **promise-based** `WebsocketAPIClient` that feels almost identical to a REST client.
+
+## Two Approaches at a Glance
+
+<Tabs>
+  <Tab title="Event-Driven (WebsocketClient)">
+    Use `sendWSAPIRequest(wsKey, channel, params)` directly on a `WebsocketClient` instance. Each call returns a promise, but you can choose to fire-and-forget and receive the result asynchronously via the `response` event handler instead.
+
+    ```typescript
+    import { WebsocketClient } from 'gateio-api';
+
+    const ws = new WebsocketClient({
+      apiKey: process.env.API_KEY,
+      apiSecret: process.env.API_SECRET,
+      reauthWSAPIOnReconnect: true,
+    });
+
+    ws.on('open',      ({ wsKey }) => console.log('connected:', wsKey));
+    ws.on('reconnect', (data) =>     console.log('reconnecting...', data));
+    ws.on('reconnected', (data) =>   console.log('reconnected:', data?.wsKey));
+    ws.on('close',     (data) =>     console.error('closed:', data));
+    ws.on('exception', (data) =>     console.error('exception:', data));
+
+    async function run() {
+      // Authenticate in advance (optional — happens automatically on first request)
+      await ws.connectWSAPI('spotV4');
+      console.log('authenticated!');
+
+      // Promise-driven: await the result
+      const newOrder = await ws.sendWSAPIRequest(
+        'spotV4',
+        'spot.order_place',
+        {
+          text: 't-my-custom-id',
+          currency_pair: 'BTC_USDT',
+          type: 'limit',
+          account: 'spot',
+          side: 'buy',
+          amount: '0.001',
+          price: '45000',
+        },
+      );
+      console.log('Order placed:', newOrder);
+
+      // Event-driven: fire-and-forget — handle result via ws.on('response', cb)
+      ws.on('response', (data) => console.info('async reply:', JSON.stringify(data)));
+
+      ws.sendWSAPIRequest('spotV4', 'spot.order_status', {
+        order_id: '600995435390',
+        currency_pair: 'BTC_USDT',
+      }).catch((e) => console.error('ws api error:', e));
+    }
+
+    run();
+    ```
+  </Tab>
+  <Tab title="Promise-Based (WebsocketAPIClient)">
+    `WebsocketAPIClient` wraps `WebsocketClient` and exposes one typed method per endpoint. It manages connection, authentication, and error handling automatically — you just `await` each call.
+
+    ```typescript
+    import { WebsocketAPIClient } from 'gateio-api';
+
+    const wsApiClient = new WebsocketAPIClient({
+      apiKey: process.env.API_KEY,
+      apiSecret: process.env.API_SECRET,
+      reauthWSAPIOnReconnect: true,
+    });
+
+    async function run() {
+      // Connection authenticates automatically before the first request
+
+      // Place a spot order
+      const newOrder = await wsApiClient.submitNewSpotOrder({
+        text: 't-my-custom-id',
+        currency_pair: 'BTC_USDT',
+        type: 'limit',
+        account: 'spot',
+        side: 'buy',
+        amount: '1',
+        price: '10000',
+      });
+      console.log('Order result:', newOrder.data);
+
+      // Cancel the order
+      const cancelOrder = await wsApiClient.cancelSpotOrder({
+        order_id: newOrder.data.result.id,
+        currency_pair: 'BTC_USDT',
+        account: 'spot',
+      });
+      console.log('Cancel result:', cancelOrder.data);
+    }
+
+    run().catch(console.error);
+    ```
+  </Tab>
+</Tabs>
+
+---
+
+## Event-Driven Approach: `sendWSAPIRequest`
+
+`sendWSAPIRequest(wsKey, channel, params)` is defined on `WebsocketClient`. It handles signing, connection assertion, and authentication assertion internally before dispatching the request over the wire.
+
+**Signature:**
+
+```typescript
+sendWSAPIRequest<TWSKey, TWSChannel, TWSParams, TWSAPIResponse>(
+  wsKey: TWSKey,
+  channel: TWSChannel,
+  params?: TWSParams,
+): Promise<TWSAPIResponse>
+```
+
+**Parameters:**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `wsKey` | `WSAPIWsKey` | Which connection to use: `'spotV4'`, `'perpFuturesUSDTV4'`, `'perpFuturesBTCV4'`, `'deliveryFuturesUSDTV4'`, or `'deliveryFuturesBTCV4'` |
+| `channel` | `SpotWSAPITopic \| FuturesWSAPITopic` | The WS API channel, e.g. `'spot.order_place'` |
+| `params` | Typed per channel | The request parameters (equivalent to `req_param` in Gate docs). Signature is generated automatically. |
+
+The method returns a `Promise` that resolves with the server's response on success, or rejects if the connection drops or the server returns an exception. You can either `await` it directly (promise-driven) or call it without `await` and handle the result via `ws.on('response', cb)` (event-driven).
+
+---
+
+## Promise-Based Approach: `WebsocketAPIClient`
+
+`WebsocketAPIClient` is a thin, convenient wrapper over `WebsocketClient` that provides one method per trading operation. It is the recommended approach when you prefer a REST-like programming model.
+
+### Setup
+
+<Steps>
+  <Step title="Install and import">
+    ```typescript
+    import { WebsocketAPIClient } from 'gateio-api';
+    ```
+  </Step>
+  <Step title="Create an instance">
+    ```typescript
+    const wsApiClient = new WebsocketAPIClient({
+      apiKey: process.env.API_KEY,
+      apiSecret: process.env.API_SECRET,
+      // Re-authenticate automatically after a reconnect
+      reauthWSAPIOnReconnect: true,
+    });
+    ```
+
+    By default, `WebsocketAPIClient` attaches its own event listeners and logs connection lifecycle events to the console. Set `attachEventListeners: false` to suppress them and attach your own via `wsApiClient.getWSClient().on(...)`.
+  </Step>
+  <Step title="Make your first request">
+    The connection is established and authenticated on demand — no explicit `connect()` call needed.
+
+    ```typescript
+    const newOrder = await wsApiClient.submitNewSpotOrder({
+      currency_pair: 'BTC_USDT',
+      type: 'limit',
+      account: 'spot',
+      side: 'buy',
+      amount: '0.001',
+      price: '45000',
+    });
+    console.log('New order:', newOrder.data);
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Authentication happens automatically before your first request. The `WebsocketAPIClient` calls `assertIsAuthenticated(wsKey)` internally, so you never need to send a manual `spot.login` or `futures.login` frame. If `reauthWSAPIOnReconnect: true` is set (recommended), the SDK will also re-authenticate automatically up to five times after any reconnection event.
+</Note>
+
+---
+
+## Spot Methods
+
+All spot methods default to the `spotV4` WsKey. Pass an explicit `wsKey` as the second argument only if you need to route the request through a different supported connection.
+
+| Method | Channel | Description |
+|---|---|---|
+| `submitNewSpotOrder(params)` | `spot.order_place` | Place a new spot limit or market order |
+| `cancelSpotOrder(params)` | `spot.order_cancel` | Cancel an order by `order_id` |
+| `cancelSpotOrderById(params[])` | `spot.order_cancel_ids` | Cancel a list of orders by `id` array |
+| `cancelSpotOrderForSymbol(params)` | `spot.order_cancel_cp` | Cancel all orders for a currency pair |
+| `updateSpotOrder(params)` | `spot.order_amend` | Amend the `price` or `amount` of an open order |
+| `getSpotOrderStatus(params)` | `spot.order_status` | Fetch the current status of a single order |
+| `getSpotOrders(params)` | `spot.order_list` | List open or finished orders |
+
+```typescript
+import { WebsocketAPIClient } from 'gateio-api';
+
+const wsApiClient = new WebsocketAPIClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+  reauthWSAPIOnReconnect: true,
+});
+
+async function spotExamples() {
+  // Place an order
+  const newOrder = await wsApiClient.submitNewSpotOrder({
+    text: 't-my-custom-id',
+    currency_pair: 'BTC_USDT',
+    type: 'limit',
+    account: 'spot',
+    side: 'buy',
+    amount: '1',
+    price: '10000',
+  });
+  console.log('Order placed:', newOrder.data);
+
+  // Cancel by order ID
+  const cancelOrder = await wsApiClient.cancelSpotOrder({
+    order_id: '1700664330',
+    currency_pair: 'BTC_USDT',
+    account: 'spot',
+  });
+  console.log('Cancelled:', cancelOrder.data);
+
+  // Cancel a list of orders by ID
+  const cancelByIds = await wsApiClient.cancelSpotOrderById([
+    { currency_pair: 'BTC_USDT', id: '1700664343', account: 'spot' },
+  ]);
+  console.log('Batch cancel result:', cancelByIds.data);
+
+  // Cancel all orders for a symbol
+  const cancelForSymbol = await wsApiClient.cancelSpotOrderForSymbol({
+    currency_pair: 'BTC_USDT',
+    side: 'buy',
+    account: 'spot',
+  });
+  console.log('Symbol cancel result:', cancelForSymbol.data);
+
+  // Amend an order
+  const amended = await wsApiClient.updateSpotOrder({
+    order_id: '1700664330',
+    currency_pair: 'BTC_USDT',
+    price: '12000',
+    amount: '0.002',
+    amend_text: 'price-update',
+  });
+  console.log('Amended order:', amended.data);
+
+  // Get order status
+  const orderStatus = await wsApiClient.getSpotOrderStatus({
+    order_id: '1700664330',
+    currency_pair: 'BTC_USDT',
+    account: 'spot',
+  });
+  console.log('Order status:', orderStatus.data);
+
+  // List orders
+  const orders = await wsApiClient.getSpotOrders({
+    currency_pair: 'BTC_USDT',
+    status: 'open',
+    page: 1,
+    limit: 10,
+    account: 'spot',
+    side: 'buy',
+  });
+  console.log('Open orders:', orders.data);
+}
+
+spotExamples().catch(console.error);
+```
+
+---
+
+## Futures Methods
+
+Futures methods default to the `perpFuturesUSDTV4` WsKey. Pass a different WsKey (`perpFuturesBTCV4`, `deliveryFuturesUSDTV4`, `deliveryFuturesBTCV4`) as the second argument to target a different futures product.
+
+| Method | Channel | Description |
+|---|---|---|
+| `submitNewFuturesOrder(params)` | `futures.order_place` | Place a single futures order |
+| `submitNewFuturesBatchOrder(params[])` | `futures.order_batch_place` | Place multiple futures orders in one request |
+| `cancelFuturesOrder(params)` | `futures.order_cancel` | Cancel an order by `order_id` |
+| `cancelFuturesOrderById(params[])` | `futures.order_cancel_ids` | Cancel multiple orders by string ID array |
+| `cancelFuturesAllOpenOrders(params)` | `futures.order_cancel_cp` | Cancel all open orders for a contract |
+| `updateFuturesOrder(params)` | `futures.order_amend` | Amend `price` or `size` of an open order |
+| `getFuturesOrders(params)` | `futures.order_list` | List open or finished futures orders |
+| `getFuturesOrderStatus(params)` | `futures.order_status` | Get the status of a single futures order |
+
+```typescript
+import { WebsocketAPIClient, WS_KEY_MAP } from 'gateio-api';
+
+const wsApiClient = new WebsocketAPIClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+  reauthWSAPIOnReconnect: true,
+});
+
+const FUTURES_WS_KEY = WS_KEY_MAP.perpFuturesUSDTV4;
+
+async function futuresExamples() {
+  // Place a futures order
+  const newOrder = await wsApiClient.submitNewFuturesOrder(
+    {
+      contract: 'BTC_USDT',
+      size: 10,          // positive = long, negative = short
+      price: '31503.28',
+      tif: 'gtc',
+      text: 't-my-custom-id',
+      close: false,
+      reduce_only: false,
+      stp_act: 'cn',
+    },
+    FUTURES_WS_KEY,
+  );
+  console.log('Futures order placed:', newOrder.data);
+
+  // Batch place
+  const batchOrders = await wsApiClient.submitNewFuturesBatchOrder(
+    [
+      { contract: 'BTC_USDT', size: 10, price: '31403.18', tif: 'gtc', text: 't-id-1' },
+      { contract: 'ETH_USDT', size: 20, price: '2500.50',  tif: 'gtc', text: 't-id-2' },
+    ],
+    FUTURES_WS_KEY,
+  );
+  console.log('Batch order result:', batchOrders.data);
+
+  // Cancel one order
+  const cancelOne = await wsApiClient.cancelFuturesOrder(
+    { order_id: '74046514' },
+    FUTURES_WS_KEY,
+  );
+  console.log('Cancelled:', cancelOne.data);
+
+  // Cancel by ID list
+  const cancelByIds = await wsApiClient.cancelFuturesOrderById(
+    ['1694883366', '74046515'],
+    FUTURES_WS_KEY,
+  );
+  console.log('Batch cancel result:', cancelByIds.data);
+
+  // Cancel all open orders for a contract
+  const cancelAll = await wsApiClient.cancelFuturesAllOpenOrders(
+    { contract: 'BTC_USDT', side: 'bid' },
+    FUTURES_WS_KEY,
+  );
+  console.log('Cancel all result:', cancelAll.data);
+
+  // Amend an order
+  const amended = await wsApiClient.updateFuturesOrder(
+    {
+      order_id: '74046543',
+      price: '31303.18',
+      size: 15,
+      amend_text: 'price-and-size-update',
+    },
+    FUTURES_WS_KEY,
+  );
+  console.log('Amended order:', amended.data);
+
+  // List open orders
+  const orderList = await wsApiClient.getFuturesOrders(
+    { contract: 'BTC_USDT', status: 'open', limit: 10 },
+    FUTURES_WS_KEY,
+  );
+  console.log('Open futures orders:', orderList.data);
+
+  // Get order status
+  const orderStatus = await wsApiClient.getFuturesOrderStatus(
+    { order_id: '74046543' },
+    FUTURES_WS_KEY,
+  );
+  console.log('Futures order status:', orderStatus.data);
+}
+
+futuresExamples().catch(console.error);
+```
+
+---
+
+## Full End-to-End Example
+
+The following example demonstrates the complete `WebsocketAPIClient` workflow: instantiate, place a spot order, check its status, then cancel it.
+
+```typescript
+import { WebsocketAPIClient } from 'gateio-api';
+
+async function start() {
+  // 1. Create the client — credentials are passed at construction time
+  const client = new WebsocketAPIClient({
+    apiKey: process.env.API_KEY || 'insert_key_here',
+    apiSecret: process.env.API_SECRET || 'insert_secret_here',
+    reauthWSAPIOnReconnect: true,
+  });
+
+  try {
+    // 2. Place a new spot order
+    //    The WebSocket connection is established and authenticated automatically.
+    const newOrder = await client.submitNewSpotOrder({
+      text: 't-my-custom-id',
+      currency_pair: 'BTC_USDT',
+      type: 'limit',
+      account: 'spot',
+      side: 'buy',
+      amount: '1',
+      price: '10000',
+    });
+    console.log('Order placed:', newOrder.data);
+
+    const orderId = newOrder.data.result.id;
+
+    // 3. Check order status
+    const orderStatus = await client.getSpotOrderStatus({
+      order_id: orderId,
+      currency_pair: 'BTC_USDT',
+      account: 'spot',
+    });
+    console.log('Order status:', orderStatus.data);
+
+    // 4. Cancel the order if it is still open
+    if (orderStatus.data.result.status === 'open') {
+      const cancelResult = await client.cancelSpotOrder({
+        order_id: orderId,
+        currency_pair: 'BTC_USDT',
+        account: 'spot',
+      });
+      console.log('Order cancelled:', cancelResult.data);
+    }
+  } catch (e) {
+    console.error('WS API Error:', e);
+  }
+}
+
+start();
+```
+
+### Accessing the Underlying WebsocketClient
+
+If you need to attach extra event listeners or subscribe to data streams alongside WS API calls, retrieve the internal `WebsocketClient` via `getWSClient()`:
+
+```typescript
+const wsClient = client.getWSClient();
+
+wsClient.on('open',        ({ wsKey }) => console.log('connected:', wsKey));
+wsClient.on('reconnected', ({ wsKey }) => console.log('reconnected:', wsKey));
+wsClient.on('exception',   (data) =>     console.error('exception:', data));
+
+// Subscribe to a data stream on the same client
+wsClient.subscribe({ topic: 'spot.orders', payload: ['BTC_USDT'] }, 'spotV4');
+```

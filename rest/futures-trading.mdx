@@ -1,0 +1,386 @@
+---
+title: "Futures Trading: Perpetual & Delivery Contracts on Gate.com"
+sidebarTitle: "Futures Trading"
+description: "Trade perpetual and delivery futures on Gate.com using the RestClient — manage positions, leverage, orders, and funding rates with full TypeScript support."
+---
+
+Gate.com offers two families of futures contracts: **perpetual futures** (no expiry, daily funding) and **delivery futures** (expire and settle at a future date). Both are accessible through the same `RestClient`. The key difference in the SDK is a required `settle` parameter that specifies the collateral currency: `'usdt'`, `'btc'`, or `'usd'`.
+
+<Note>
+  All futures methods that interact with a specific market require `settle`. Perpetual methods live under `/futures/{settle}/...` and delivery methods under `/delivery/{settle}/...`.
+</Note>
+
+## Market Data (Public)
+
+### Contracts
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+
+// All USDT-margined perpetual contracts
+const contracts = await client.getFuturesContracts({ settle: 'usdt' });
+
+// Single contract details
+const btcContract = await client.getFuturesContract({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+});
+```
+
+### Tickers
+
+```typescript
+// All USDT perpetual tickers
+const allTickers = await client.getFuturesTickers({ settle: 'usdt' });
+
+// Single contract ticker
+const btcTicker = await client.getFuturesTickers({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+});
+```
+
+### Order Book
+
+```typescript
+const book = await client.getFuturesOrderBook({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  interval: '0',  // price precision
+  limit: 20,
+  with_id: true,
+});
+```
+
+### Candles
+
+```typescript
+const candles = await client.getFuturesCandles({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  interval: '1h',
+  limit: 200,
+});
+```
+
+### Funding Rates
+
+```typescript
+// Historical funding rate for a contract
+const rates = await client.getFundingRates({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  limit: 100,
+});
+
+// Batch funding rates for multiple contracts
+const batchRates = await client.getBatchFundingRates({
+  settle: 'usdt',
+  contracts: ['BTC_USDT', 'ETH_USDT', 'SOL_USDT'],
+});
+```
+
+### Risk Limit Tiers
+
+```typescript
+// Position size tiers and corresponding maintenance margins
+const tiers = await client.getRiskLimitTiers({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+});
+```
+
+## Account (Authenticated)
+
+```typescript
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// Futures account overview for USDT settlement
+const account = await client.getFuturesAccount({ settle: 'usdt' });
+console.log('Available balance:', account.available);
+console.log('Unrealised PnL:', account.unrealised_pnl);
+
+// Account ledger — filter by type
+const ledger = await client.getFuturesAccountBook({
+  settle: 'usdt',
+  type: 'pnl',   // 'dnw' | 'pnl' | 'fee' | 'refr' | 'fund' | ...
+  limit: 100,
+});
+```
+
+## Positions
+
+### Listing Positions
+
+```typescript
+// All open positions
+const positions = await client.getFuturesPositions({ settle: 'usdt' });
+
+// Only positions currently holding size
+const holding = await client.getFuturesPositions({
+  settle: 'usdt',
+  holding: true,
+});
+
+// Single contract position
+const btcPosition = await client.getFuturesPosition({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+});
+console.log('Size:', btcPosition.size);
+console.log('Entry price:', btcPosition.entry_price);
+console.log('Unrealised PnL:', btcPosition.unrealised_pnl);
+```
+
+### Adjusting Margin
+
+```typescript
+// Add margin to an isolated position
+// POST /futures/{settle}/positions/{contract}/margin
+await client.updateFuturesMargin({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  change: '100',    // positive = add, negative = reduce
+});
+```
+
+### Updating Leverage
+
+```typescript
+// POST /futures/{settle}/positions/{contract}/leverage
+await client.updateFuturesLeverage({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  leverage: '10',            // 0 = cross margin
+  cross_leverage_limit: '0', // only relevant when using cross mode
+});
+```
+
+### Position Mode
+
+```typescript
+// Switch between one-way and hedge (dual) mode
+// POST /futures/{settle}/positions/cross_mode
+await client.updateFuturesPositionMode({
+  settle: 'usdt',
+  dual_mode: true,  // true = hedge/dual mode
+});
+```
+
+## Orders
+
+### Placing Orders
+
+<Tabs>
+  <Tab title="Limit Order (Long)">
+    ```typescript
+    // POST /futures/{settle}/orders
+    // Positive size = long, negative size = short
+    const longOrder = await client.submitFuturesOrder({
+      settle: 'usdt',
+      contract: 'BTC_USDT',
+      size: 10,           // number of contracts (positive = long)
+      price: '60000',     // limit price
+      tif: 'gtc',         // 'gtc' | 'ioc' | 'poc' | 'fok'
+    });
+
+    console.log('Order ID:', longOrder.id);
+    ```
+  </Tab>
+  <Tab title="Market Order (Short)">
+    ```typescript
+    // Market sell / short — set price to '0' and tif to 'ioc'
+    const shortOrder = await client.submitFuturesOrder({
+      settle: 'usdt',
+      contract: 'BTC_USDT',
+      size: -5,    // negative = short
+      price: '0',  // market order
+      tif: 'ioc',
+    });
+    ```
+  </Tab>
+  <Tab title="Close Position">
+    ```typescript
+    // Close an existing long position
+    const closeOrder = await client.submitFuturesOrder({
+      settle: 'usdt',
+      contract: 'BTC_USDT',
+      size: 0,         // size 0 + close:true closes the full position
+      price: '0',
+      close: true,
+      tif: 'ioc',
+    });
+    ```
+  </Tab>
+  <Tab title="Reduce Only">
+    ```typescript
+    // Reduce-only order — cannot increase position size
+    const reduceOrder = await client.submitFuturesOrder({
+      settle: 'usdt',
+      contract: 'BTC_USDT',
+      size: -3,
+      price: '61000',
+      reduce_only: true,
+      tif: 'gtc',
+    });
+    ```
+  </Tab>
+</Tabs>
+
+### Querying Orders
+
+```typescript
+// Open orders for a contract
+const openOrders = await client.getFuturesOrders({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  status: 'open',
+});
+
+// Filled/cancelled orders
+const finished = await client.getFuturesOrders({
+  settle: 'usdt',
+  status: 'finished',
+  limit: 50,
+});
+
+// Single order by ID
+const order = await client.getFuturesOrder({
+  settle: 'usdt',
+  order_id: '123456789',
+});
+```
+
+### Cancelling Orders
+
+```typescript
+// Cancel a single order
+await client.cancelFuturesOrder({
+  settle: 'usdt',
+  order_id: '123456789',
+});
+
+// Cancel all open orders for a contract
+await client.cancelAllFuturesOrders({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+});
+```
+
+### Trading History
+
+```typescript
+// GET /futures/{settle}/my_trades
+const trades = await client.getFuturesTradingHistory({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  limit: 100,
+});
+```
+
+## Advanced: Price-Triggered Orders
+
+A futures price-triggered order submits a child futures order when a trigger price condition is met.
+
+```typescript
+// POST /futures/{settle}/price_orders
+await client.submitFuturesPriceTriggeredOrder({
+  initial: {
+    contract: 'BTC_USDT',
+    size: 10,
+    price: '59500',
+    tif: 'gtc',
+    text: 'trigger-long',
+  },
+  trigger: {
+    strategy_type: 0,   // 0 = price trigger
+    price_type: 0,      // 0 = last price
+    price: '60000',
+    rule: 1,            // 1 = >=, 2 = <=
+    expiration: 86400,
+  },
+  settle: 'usdt',
+});
+
+// List active auto-orders
+const autoOrders = await client.getFuturesAutoOrders({
+  settle: 'usdt',
+  status: 'open',
+  contract: 'BTC_USDT',
+});
+```
+
+## Delivery Futures
+
+Delivery contracts use the same client but a different set of methods prefixed with `getDelivery` / `submitDelivery`. The settle currency for delivery is always `'usdt'`.
+
+```typescript
+// List all delivery contracts
+const deliveryContracts = await client.getAllDeliveryContracts({ settle: 'usdt' });
+
+// Delivery account balance
+const deliveryAccount = await client.getDeliveryAccount({ settle: 'usdt' });
+
+// Place a delivery futures order
+const deliveryOrder = await client.submitDeliveryOrder({
+  settle: 'usdt',
+  contract: 'BTC_USDT_20250328',   // delivery contract name includes expiry date
+  size: 5,
+  price: '60000',
+  tif: 'gtc',
+});
+
+// List delivery positions
+const deliveryPositions = await client.getDeliveryPositions({ settle: 'usdt' });
+```
+
+<Tip>
+  Use `getFuturesContracts()` for perpetuals and `getDeliveryContracts()` for delivery contracts. The contract name format for delivery includes the expiry date (e.g. `BTC_USDT_20250328`).
+</Tip>
+
+## Complete Example: Open and Close a Long Position
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+async function openAndCloseLong() {
+  // 1. Set 10× leverage
+  await client.updateFuturesLeverage({
+    settle: 'usdt',
+    contract: 'BTC_USDT',
+    leverage: '10',
+  });
+
+  // 2. Open long position (market order)
+  const openOrder = await client.submitFuturesOrder({
+    settle: 'usdt',
+    contract: 'BTC_USDT',
+    size: 10,
+    price: '0',
+    tif: 'ioc',
+  });
+  console.log('Opened long at order:', openOrder.id);
+
+  // 3. Wait for market to move ... (your trading logic here)
+
+  // 4. Close the position
+  const closeOrder = await client.submitFuturesOrder({
+    settle: 'usdt',
+    contract: 'BTC_USDT',
+    size: 0,
+    price: '0',
+    close: true,
+    tif: 'ioc',
+  });
+  console.log('Position closed at order:', closeOrder.id);
+}
+
+openAndCloseLong().catch(console.error);
+```

@@ -1,0 +1,364 @@
+---
+title: "Wallet, Transfers & Account Management on Gate.com"
+sidebarTitle: "Wallet & Account"
+description: "Manage deposits, withdrawals, cross-account transfers, sub-accounts, and unified account settings using the Gate.io SDK RestClient."
+---
+
+The wallet and account section of `RestClient` covers everything outside of trading: depositing and withdrawing funds, moving balances between Gate.com sub-accounts and product wallets, managing sub-accounts and their API keys, and configuring the Unified Account mode. All methods in this section require authentication.
+
+## Deposits
+
+### Create a Deposit Address
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// GET /wallet/deposit_address
+const depositAddress = await client.createDepositAddress({
+  currency: 'USDT',
+  chain: 'TRX',   // e.g. 'ETH', 'TRX', 'BSC', 'SOL'
+});
+
+console.log('Address:', depositAddress.address);
+console.log('Memo:', depositAddress.memo);
+```
+
+### Deposit Records
+
+```typescript
+// GET /wallet/deposits
+const deposits = await client.getDepositRecords({
+  currency: 'USDT',
+  limit: 50,
+  from: Math.floor(Date.now() / 1000) - 86400 * 30, // past 30 days
+});
+```
+
+## Withdrawals
+
+### Submit a Withdrawal
+
+```typescript
+// POST /withdrawals
+const withdrawal = await client.submitWithdrawal({
+  currency: 'USDT',
+  amount: '500',
+  chain: 'TRX',
+  address: 'T...',       // destination address
+  memo: '',              // optional memo/tag for supported chains
+  withdraw_order_id: 'my-ref-001', // optional client reference ID
+});
+
+console.log('Withdrawal ID:', withdrawal.id);
+console.log('Status:', withdrawal.status);
+```
+
+### Withdrawal Records
+
+```typescript
+// GET /wallet/withdrawals
+const withdrawals = await client.getWithdrawalRecords({
+  currency: 'USDT',
+  limit: 50,
+  from: Math.floor(Date.now() / 1000) - 86400 * 7,
+});
+```
+
+### Cancel a Withdrawal
+
+Only withdrawals in a pending/unprocessed state can be cancelled.
+
+```typescript
+// DELETE /withdrawals/{withdrawal_id}
+await client.cancelWithdrawal({ withdrawal_id: '12345678' });
+```
+
+## Balances
+
+### Total Balance
+
+```typescript
+// GET /wallet/total_balance — portfolio total in USD
+const totalBalance = await client.getBalances();
+console.log('Total USD value:', totalBalance.total.amount);
+console.log('By product:', totalBalance.details);
+```
+
+### Spot Account Balances
+
+```typescript
+// All spot balances
+const spotBalances = await client.getSpotAccounts();
+
+// Single currency
+const usdtBalance = await client.getSpotAccounts({ currency: 'USDT' });
+```
+
+### Small Balances (Dust)
+
+Balances too small to trade can be consolidated into GT (Gate Token).
+
+```typescript
+// GET /wallet/small_balance — list all dust balances
+const dustBalances = await client.getSmallBalances();
+
+// POST /wallet/small_balance — convert specified currencies to GT
+await client.convertSmallBalance({
+  currency: ['BNB', 'LTC', 'XRP'], // currencies to convert
+});
+
+// Conversion history
+const dustHistory = await client.getSmallBalanceHistory({
+  currency: 'GT',
+  limit: 50,
+});
+```
+
+## Transfers Between Products
+
+### Internal Transfer (Spot ↔ Futures ↔ Margin ↔ Options)
+
+```typescript
+// POST /wallet/transfers
+await client.submitTransfer({
+  currency: 'USDT',
+  from: 'spot',
+  to: 'futures',   // 'spot' | 'margin' | 'futures' | 'delivery' | 'cross_margin' | 'options'
+  amount: '1000',
+  settle: 'usdt',  // required when from/to includes futures
+});
+```
+
+### Main Account ↔ Sub-Account Transfer
+
+```typescript
+// POST /wallet/sub_account_transfers
+// Transfer USDT from main account to a sub-account's spot wallet
+await client.submitMainSubTransfer({
+  currency: 'USDT',
+  sub_account: '123456',   // sub-account user ID
+  direction: 'to',         // 'to' = main→sub, 'from' = sub→main
+  amount: '500',
+  sub_account_type: 'spot',
+});
+
+// Transfer history
+// GET /wallet/sub_account_transfers
+const subTransfers = await client.getMainSubTransfers({
+  sub_uid: '123456',
+  limit: 50,
+});
+```
+
+### Sub-Account to Sub-Account Transfer
+
+```typescript
+// POST /wallet/sub_account_to_sub_account
+await client.submitSubToSubTransfer({
+  currency: 'USDT',
+  sub_account_from: '111111',
+  sub_account_from_type: 'spot',
+  sub_account_to: '222222',
+  sub_account_to_type: 'spot',
+  amount: '200',
+});
+```
+
+## Sub-Accounts
+
+### Create a Sub-Account
+
+```typescript
+// POST /sub_accounts
+const subAccount = await client.createSubAccount({
+  login_name: 'trading-bot-01',
+  remark: 'Automated trading sub-account',
+  email: 'bot01@example.com',
+});
+
+console.log('Sub-account UID:', subAccount.user_id);
+```
+
+### List and Retrieve Sub-Accounts
+
+```typescript
+// GET /sub_accounts
+const allSubAccounts = await client.getSubAccounts();
+
+// Single sub-account by UID
+const sub = await client.getSubAccount({ user_id: 123456 });
+console.log('Login name:', sub.login_name);
+console.log('Status:', sub.state);
+```
+
+### Sub-Account API Keys
+
+```typescript
+// Create an API key for a sub-account
+// POST /sub_accounts/{user_id}/keys
+const apiKey = await client.createSubAccountApiKey({
+  user_id: 123456,
+  name: 'spot-read-only',
+  perms: [
+    { name: 'spot', read_only: true },
+    { name: 'wallet', read_only: true },
+  ],
+  ip_whitelist: ['203.0.113.0'],
+});
+
+console.log('Key:', apiKey.key);
+
+// List all API keys for a sub-account
+const subKeys = await client.getSubAccountApiKeys({ user_id: 123456 });
+
+// Get a specific key
+const specificKey = await client.getSubAccountApiKey({
+  user_id: 123456,
+  key: apiKey.key,
+});
+```
+
+### Lock / Unlock a Sub-Account
+
+```typescript
+// POST /sub_accounts/{user_id}/lock
+await client.lockSubAccount({ user_id: 123456 });
+
+// POST /sub_accounts/{user_id}/unlock
+await client.unlockSubAccount({ user_id: 123456 });
+```
+
+<Warning>
+  Locking a sub-account immediately disables all of its API keys and prevents login. Any open orders placed by that sub-account remain active until cancelled.
+</Warning>
+
+## Unified Account
+
+Gate.com's Unified Account combines spot, margin, and futures collateral into a single portfolio-margin pool. Use `setUnifiedAccountMode()` to switch between account modes.
+
+### Account Information
+
+```typescript
+// GET /unified/accounts
+const unifiedInfo = await client.getUnifiedAccountInfo();
+console.log('Equity:', unifiedInfo.equity);
+console.log('Mode:', unifiedInfo.unified_account_mode);
+
+// Query a specific currency within unified account
+const btcInfo = await client.getUnifiedAccountInfo({ currency: 'BTC' });
+```
+
+### Switching Account Mode
+
+```typescript
+// PUT /unified/unified_mode
+// Available modes: 'classic' | 'multi_currency' | 'portfolio' | 'single_currency'
+await client.setUnifiedAccountMode({
+  mode: 'multi_currency',
+  settings: {
+    usdt_futures: true,   // use USDT-margined futures in unified pool
+    spot_hedge: true,     // allow spot holdings to offset futures exposure
+    use_funding: false,
+  },
+});
+
+// Check current mode
+const currentMode = await client.getUnifiedAccountMode();
+```
+
+### Unified Borrow and Repay
+
+In Unified Account mode, all borrowing is handled through a single endpoint.
+
+```typescript
+// POST /unified/loans
+// Borrow USDT in unified account
+await client.submitUnifiedBorrowOrRepay({
+  currency: 'USDT',
+  type: 'borrow',
+  amount: '2000',
+  text: 'borrow-for-arb',
+});
+
+// Repay
+await client.submitUnifiedBorrowOrRepay({
+  currency: 'USDT',
+  type: 'repay',
+  amount: '2000',
+});
+
+// Repay entire outstanding balance
+await client.submitUnifiedBorrowOrRepay({
+  currency: 'USDT',
+  type: 'repay',
+  amount: '0',
+  repaid_all: true,
+});
+```
+
+### Unified Loan Records
+
+```typescript
+// Active loans
+const loans = await client.getUnifiedLoans({ currency: 'USDT' });
+
+// Borrow/repay history
+const loanRecords = await client.getUnifiedLoanRecords({
+  type: 'borrow',
+  currency: 'USDT',
+  limit: 50,
+});
+
+// Interest charged
+const interest = await client.getUnifiedInterestRecords({
+  currency: 'USDT',
+  limit: 100,
+});
+```
+
+## Trading Fees
+
+```typescript
+// GET /wallet/fee — your personalised maker/taker fee rates
+const fees = await client.getTradingFees();
+console.log('Maker fee:', fees.maker_fee);
+console.log('Taker fee:', fees.taker_fee);
+
+// Fees for a specific currency pair
+const pairFees = await client.getTradingFees({ currency_pair: 'BTC_USDT' });
+```
+
+## Sub-Account Balances (Parent View)
+
+The main account can inspect balances held in any of its sub-accounts across all product wallets:
+
+```typescript
+// Spot balances across all sub-accounts
+const subSpotBalances = await client.getSubBalance({
+  sub_uid: '123456', // optional: filter to one sub-account
+});
+
+// Futures balances
+const subFuturesBalances = await client.getSubFuturesBalances({
+  sub_uid: '123456',
+  settle: 'usdt',
+});
+
+// Cross margin balances
+const subCrossBalances = await client.getSubCrossMarginBalances({
+  sub_uid: '123456',
+});
+```
+
+## Saved Withdrawal Addresses
+
+```typescript
+// GET /wallet/saved_address
+const savedAddresses = await client.getSavedAddresses({
+  currency: 'USDT',
+  chain: 'TRX',
+  limit: '20',
+});
+```

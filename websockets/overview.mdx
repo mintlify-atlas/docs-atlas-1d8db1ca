@@ -1,0 +1,144 @@
+---
+title: "WebSocket Client Overview for Gate.io SDK"
+sidebarTitle: "Overview"
+description: "The WebsocketClient provides persistent, auto-reconnecting WebSocket connections to Gate.com streams. Learn the core concepts, WsKey system, and event model."
+---
+
+The `WebsocketClient` is the core class for all real-time streaming in the `gateio-api` SDK. It manages persistent WebSocket connections to Gate.com's various server endpoints, handles authentication for private streams, automatically reconnects when a connection drops, and delivers market data and account events through a familiar Node.js `EventEmitter` interface. Whether you need live ticker prices, order book updates, or private order and balance notifications, the `WebsocketClient` is your single entry point.
+
+## The WsKey System
+
+Each Gate.com WebSocket service runs on its own server URL. The SDK abstracts this with a **WsKey** — a short string constant that maps one-to-one to a unique WebSocket connection. When you call `subscribe()` or `unsubscribe()`, you always pass a WsKey alongside the topic so the SDK knows which underlying connection to use.
+
+All available WsKeys are exported from the `WS_KEY_MAP` constant:
+
+| WsKey | Market | Live Endpoint |
+|---|---|---|
+| `spotV4` | Spot & Margin | `wss://api.gateio.ws/ws/v4/` |
+| `perpFuturesUSDTV4` | Perpetual Futures (USDT) | `wss://fx-ws.gateio.ws/v4/ws/usdt` |
+| `perpFuturesBTCV4` | Perpetual Futures (BTC) | `wss://fx-ws.gateio.ws/v4/ws/btc` |
+| `deliveryFuturesUSDTV4` | Delivery Futures (USDT) | `wss://fx-ws.gateio.ws/v4/ws/delivery/usdt` |
+| `deliveryFuturesBTCV4` | Delivery Futures (BTC) | `wss://fx-ws.gateio.ws/v4/ws/delivery/btc` |
+| `optionsV4` | Options | `wss://op-ws.gateio.live/v4/ws` |
+| `announcementsV4` | Announcements | `wss://api.gateio.ws/ws/v4/ann` |
+
+Import WsKey values directly from the package:
+
+```typescript
+import { WebsocketClient, WS_KEY_MAP } from 'gateio-api';
+
+// Use the constant
+ws.subscribe('spot.tickers', WS_KEY_MAP.spotV4);
+
+// Or use the literal string — both are equivalent
+ws.subscribe('spot.tickers', 'spotV4');
+```
+
+## Event Model
+
+`WebsocketClient` extends `EventEmitter`. All real-time data and lifecycle notifications arrive as named events. Attach handlers before calling `subscribe()`:
+
+| Event | When it fires | Payload |
+|---|---|---|
+| `update` | A stream data message arrives | `{ data, wsKey }` |
+| `open` | A connection is first established | `{ wsKey, event, wsUrl, ws }` |
+| `response` | Server replies to a subscribe/unsubscribe/auth request | `{ wsKey, ...replyFields }` |
+| `close` | A connection closes (expected or unexpected) | `{ wsKey, event }` |
+| `reconnected` | Auto-reconnect succeeded | `{ wsKey, event, wsUrl, ws }` |
+| `reconnect` | Auto-reconnect is about to be attempted | `{ wsKey, event }` |
+| `authenticated` | The connection has been authenticated | `{ wsKey }` |
+| `exception` | An internal SDK exception occurred | `{ wsKey, ...details }` |
+| `error` | A raw WebSocket-level error occurred | error object |
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({ apiKey: 'xxx', apiSecret: 'yyy' });
+
+ws.on('update', (data) => console.log('stream data:', data));
+ws.on('open', ({ wsKey }) => console.log('connected:', wsKey));
+ws.on('response', (data) => console.log('server reply:', JSON.stringify(data)));
+ws.on('close', ({ wsKey }) => console.log('closed:', wsKey));
+ws.on('reconnected', ({ wsKey }) => console.log('reconnected:', wsKey));
+ws.on('exception', (data) => console.error('exception:', data));
+ws.on('error', (err) => console.error('ws error:', err));
+```
+
+## Connection Lifecycle
+
+The `WebsocketClient` manages connections fully automatically:
+
+- **Auto-connect on subscribe** — calling `ws.subscribe(topic, wsKey)` establishes the WebSocket connection for that WsKey if one is not already open. You do not need to call a `connect()` method first.
+- **Heartbeat / ping-pong** — the SDK sends ping frames on a regular interval and monitors pong replies. If a pong does not arrive within the timeout window, the connection is treated as dead and a reconnect is initiated.
+- **Auto-reconnect** — when a connection closes unexpectedly the SDK waits for `reconnectTimeout` milliseconds then reopens it and resubscribes to all previously-active topics automatically.
+- **Subscription replay** — because subscriptions are cached internally, every topic you subscribed to before a disconnect is resubscribed immediately after reconnect, with no extra code on your side.
+
+If you want to pre-warm all connections at startup rather than waiting for the first `subscribe()` call, you can call `connectAll()`:
+
+```typescript
+await Promise.all(ws.connectAll());
+```
+
+## Authentication
+
+Private topics (orders, balances, positions, and so on) require an authenticated connection. Pass your API credentials in the constructor and the SDK authenticates the connection automatically before the first private subscription is sent:
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+// The connection for 'spotV4' will be opened and authenticated automatically
+ws.subscribe('spot.orders', 'spotV4');
+```
+
+No explicit login call is required. The SDK generates the HMAC-SHA512 signature and injects it into the authentication frame before it is sent.
+
+## Configuration Options
+
+All options are defined by the `WSClientConfigurableOptions` interface and passed to the constructor:
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  // Authentication (required for private topics)
+  apiKey: 'your_api_key',
+  apiSecret: 'your_api_secret',
+
+  // Connect to testnet instead of livenet (supported on most WsKeys)
+  useTestnet: false,
+
+  // How often (ms) to send a ping frame to keep the connection alive
+  // Default: 10000
+  pingInterval: 10000,
+
+  // How long (ms) to wait for a pong reply before declaring the connection dead
+  // Default: 1500
+  pongTimeout: 1500,
+
+  // Delay (ms) before attempting a reconnect after a connection drops
+  // Default: 500
+  reconnectTimeout: 500,
+
+  // Receive window (ms) added to the timestamp used when signing private WS API requests
+  // Default: 0
+  recvWindow: 0,
+
+  // Automatically re-authenticate the WS API connection after a reconnect
+  // Default: false
+  reauthWSAPIOnReconnect: true,
+});
+```
+
+<CardGroup cols={2}>
+  <Card title="Data Streams" icon="chart-line" href="/websockets/data-streams">
+    Subscribe to public market data and private account events using the WebsocketClient.
+  </Card>
+  <Card title="WebSocket API" icon="bolt" href="/websockets/websocket-api">
+    Place and cancel orders in real time over a WebSocket connection.
+  </Card>
+</CardGroup>

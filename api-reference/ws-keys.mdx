@@ -1,0 +1,126 @@
+---
+title: "WsKey Reference: WebSocket Connection Keys for Gate.io"
+sidebarTitle: "WsKeys"
+description: "WsKey values identify which Gate.io WebSocket server to connect to. Reference all available keys, their markets, and when to use each one."
+---
+
+Every Gate.io WebSocket connection is identified by a `WsKey` — a string constant that tells the `WebsocketClient` which server URL to open, which authentication flow to use, and which set of topics are valid for that connection. You pass a `WsKey` whenever you subscribe to a channel or make a WebSocket API call, so choosing the right one is the first step when working with real-time data or low-latency order management.
+
+## How WsKeys Work
+
+The `WebsocketClient` maintains one physical connection per unique `WsKey`. When you call `ws.subscribe(topic, wsKey)`, the client looks up the server URL for that key, opens a connection if one isn't already live, and registers the subscription. Similarly, `sendWSAPIRequest(wsKey, topic, params)` routes the request over the connection that matches the key.
+
+```typescript
+import { WebsocketClient, WS_KEY_MAP } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+});
+
+// Subscribe to the spot order book using the constant
+ws.subscribe('spot.order_book', WS_KEY_MAP.spotV4);
+
+// String literals also work — both are equivalent
+ws.subscribe('spot.order_book', 'spotV4');
+```
+
+<Tip>
+  Using `WS_KEY_MAP.spotV4` (the exported constant) rather than the raw string `'spotV4'` gives you IDE autocomplete and catches typos at compile time via TypeScript's `as const` typing.
+</Tip>
+
+## WsKey Reference
+
+The complete `WS_KEY_MAP` exported from `gateio-api` contains the following entries. Each key maps to a unique livenet WebSocket URL and a matching testnet URL (where available).
+
+| WsKey | Market | Livenet URL | Authentication Required |
+|-------|--------|-------------|------------------------|
+| `spotV4` | Spot & Margin | `wss://api.gateio.ws/ws/v4/` | Yes — for private topics |
+| `perpFuturesUSDTV4` | Perpetual Futures (USDT) | `wss://fx-ws.gateio.ws/v4/ws/usdt` | Yes — for private topics |
+| `perpFuturesBTCV4` | Perpetual Futures (BTC) | `wss://fx-ws.gateio.ws/v4/ws/btc` | Yes — for private topics |
+| `deliveryFuturesUSDTV4` | Delivery Futures (USDT) | `wss://fx-ws.gateio.ws/v4/ws/delivery/usdt` | Yes — for private topics |
+| `deliveryFuturesBTCV4` | Delivery Futures (BTC) | `wss://fx-ws.gateio.ws/v4/ws/delivery/btc` | Yes — for private topics |
+| `optionsV4` | Options | `wss://op-ws.gateio.live/v4/ws` | Yes — for private topics |
+| `announcementsV4` | Announcements | `wss://api.gateio.ws/ws/v4/ann` | No |
+
+## TypeScript Types
+
+The SDK exports two TypeScript types derived directly from `WS_KEY_MAP`:
+
+**`WsKey`** — a union of all valid WsKey string values. Use this to type any variable or parameter that should accept any key:
+
+```typescript
+import type { WsKey } from 'gateio-api';
+
+function logConnection(key: WsKey) {
+  console.log(`Connected to: ${key}`);
+}
+```
+
+**`FuturesWsKey`** — a narrower union containing only the four futures keys. Use this when your code is only relevant to futures connections:
+
+```typescript
+import type { FuturesWsKey } from 'gateio-api';
+
+// Valid values: 'perpFuturesUSDTV4' | 'perpFuturesBTCV4' |
+//               'deliveryFuturesUSDTV4' | 'deliveryFuturesBTCV4'
+function placeFuturesOrder(wsKey: FuturesWsKey, contract: string) {
+  // ...
+}
+```
+
+## Importing WS_KEY_MAP
+
+```typescript
+import { WS_KEY_MAP } from 'gateio-api';
+
+// Access individual keys
+console.log(WS_KEY_MAP.spotV4);             // 'spotV4'
+console.log(WS_KEY_MAP.perpFuturesUSDTV4);  // 'perpFuturesUSDTV4'
+console.log(WS_KEY_MAP.optionsV4);          // 'optionsV4'
+```
+
+## Choosing the Right WsKey
+
+Match the `WsKey` to the product area you are trading or monitoring:
+
+- **Spot & margin trading** → `WS_KEY_MAP.spotV4`
+- **Perpetual futures settled in USDT** → `WS_KEY_MAP.perpFuturesUSDTV4`
+- **Perpetual futures settled in BTC** → `WS_KEY_MAP.perpFuturesBTCV4`
+- **Delivery futures settled in USDT** → `WS_KEY_MAP.deliveryFuturesUSDTV4`
+- **Delivery futures settled in BTC** → `WS_KEY_MAP.deliveryFuturesBTCV4`
+- **Options contracts** → `WS_KEY_MAP.optionsV4`
+- **Platform announcements** (public only, no auth) → `WS_KEY_MAP.announcementsV4`
+
+## Constant vs. String Literal
+
+Both of the following are valid. The constant form is preferred for type safety:
+
+```typescript
+import { WebsocketClient, WS_KEY_MAP } from 'gateio-api';
+
+const ws = new WebsocketClient({ apiKey: '...', apiSecret: '...' });
+
+// ✅ Preferred: uses the exported constant — autocomplete + type-checked
+ws.subscribe('futures.orders', WS_KEY_MAP.perpFuturesUSDTV4);
+
+// ✅ Also valid: string literal — still type-safe because WsKey is a union
+ws.subscribe('futures.orders', 'perpFuturesUSDTV4');
+```
+
+## Using the Testnet
+
+Pass `useTestnet: true` to `WebsocketClient` to connect to testnet URLs automatically. Not all markets have a testnet WebSocket endpoint — `spotV4` and `announcementsV4` do not:
+
+```typescript
+import { WebsocketClient, WS_KEY_MAP } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.GATE_TESTNET_API_KEY,
+  apiSecret: process.env.GATE_TESTNET_API_SECRET,
+  useTestnet: true,
+});
+
+// Connects to wss://fx-ws-testnet.gateio.ws/v4/ws/usdt
+ws.subscribe('futures.orders', WS_KEY_MAP.perpFuturesUSDTV4);
+```

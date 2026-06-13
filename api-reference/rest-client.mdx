@@ -1,0 +1,612 @@
+---
+title: "RestClient Class Reference for Gate.io SDK"
+sidebarTitle: "RestClient"
+description: "Complete reference for the Gate.io SDK RestClient class — constructor options, all product area method groups, authentication, and TypeScript type support."
+---
+
+The `RestClient` class is the primary entry point for all REST API interactions with Gate.io. It covers every product area the exchange offers — from spot and margin trading to futures, delivery, options, wallet management, sub-accounts, and beyond. Every method returns a `Promise`, making it fully compatible with `async/await` patterns in both Node.js and browser environments.
+
+## Installation and Import
+
+```typescript
+import { RestClient } from 'gateio-api';
+```
+
+## Constructor
+
+```typescript
+new RestClient(options?: RestClientOptions, requestOptions?: AxiosRequestConfig)
+```
+
+Both parameters are optional. If you only need public (unauthenticated) endpoints, you can instantiate with no arguments at all.
+
+<ParamField path="options" type="RestClientOptions" optional>
+  Configuration object for the REST client. All fields are optional.
+
+  <Expandable title="RestClientOptions fields">
+    <ParamField path="apiKey" type="string" optional>
+      Your Gate.io API key. Required for authenticated endpoints.
+    </ParamField>
+    <ParamField path="apiSecret" type="string" optional>
+      Your Gate.io API secret. Required for authenticated endpoints.
+    </ParamField>
+    <ParamField path="recvWindow" type="number" optional>
+      Max size of the request window in milliseconds for signed API calls. Overrides the global default.
+    </ParamField>
+    <ParamField path="strictParamValidation" type="boolean" optional>
+      Default: `false`. When `true`, throws errors if any request parameters are `undefined`.
+    </ParamField>
+    <ParamField path="baseUrl" type="string" optional>
+      Optionally override the API protocol and domain. Example: `'https://api.gate.io'`.
+    </ParamField>
+    <ParamField path="baseUrlKey" type="GateBaseUrlKey" optional>
+      Manually select one of the pre-configured base URLs in the library (`'live'`, `'futuresLiveAlternative'`, or `'futuresTestnet'`).
+    </ParamField>
+    <ParamField path="parseExceptions" type="boolean" optional>
+      Default: `true`. Whether to post-process and re-throw request exceptions from the HTTP layer.
+    </ParamField>
+    <ParamField path="keepAlive" type="boolean" optional>
+      Enable HTTP KeepAlive for REST API requests via axios.
+    </ParamField>
+    <ParamField path="keepAliveMsecs" type="number" optional>
+      How often to send TCP KeepAlive packets when `keepAlive` is `true`. Default: `1000` ms.
+    </ParamField>
+    <ParamField path="customSignMessageFn" type="(message: string, secret: string) => Promise<string>" optional>
+      Provide a custom HMAC signing function. Useful for using Node.js's faster `createHmac` instead of the Web Crypto API. See the examples folder for a demonstration.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="requestOptions" type="AxiosRequestConfig" optional>
+  Low-level Axios request configuration passed directly to the HTTP client. Use this for proxy settings, custom headers, or timeout overrides.
+</ParamField>
+
+## Instantiation Examples
+
+**Public endpoints only (no authentication):**
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+
+const tickers = await client.getSpotTicker({ currency_pair: 'BTC_USDT' });
+console.log(tickers);
+```
+
+**Authenticated client:**
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: 'YOUR_API_KEY',
+  apiSecret: 'YOUR_API_SECRET',
+});
+
+const accounts = await client.getSpotAccounts();
+console.log(accounts);
+```
+
+**Futures testnet:**
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: 'YOUR_TESTNET_API_KEY',
+  apiSecret: 'YOUR_TESTNET_API_SECRET',
+  baseUrlKey: 'futuresTestnet',
+});
+```
+
+## Authentication
+
+Authentication is handled automatically for any method that requires it. When `apiKey` and `apiSecret` are present in the constructor options, the client signs every request that touches a private endpoint. You do not need to call any separate login method.
+
+Methods that require authentication are marked with a lock icon (🔒) in the [endpoint function list](https://github.com/tiagosiebler/gateio-api/blob/master/docs/endpointFunctionList.md) on GitHub.
+
+## Method Groups by Product Area
+
+All methods return a `Promise`. Use `await` or `.then()` to handle the response. The complete list of all methods — including the exact HTTP method and Gate.io endpoint path each one maps to — is maintained in [`docs/endpointFunctionList.md`](https://github.com/tiagosiebler/gateio-api/blob/master/docs/endpointFunctionList.md) on GitHub.
+
+<AccordionGroup>
+
+<Accordion title="Withdrawal">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `submitWithdrawal(params)` | 🔒 | Submit a withdrawal request |
+| `submitSpotMainAccountTransfer(params)` | 🔒 | Transfer from spot main account |
+| `cancelWithdrawal(params)` | 🔒 | Cancel a pending withdrawal by ID |
+
+```typescript
+// Submit a withdrawal
+const result = await client.submitWithdrawal({
+  amount: '100',
+  currency: 'USDT',
+  address: '0xYourAddress',
+  chain: 'TRX',
+});
+
+// Cancel a withdrawal
+await client.cancelWithdrawal({ withdrawal_id: '123456' });
+```
+
+</Accordion>
+
+<Accordion title="Wallet">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getCurrencyChains(params)` | — | Get supported chains for a currency |
+| `createDepositAddress(params)` | 🔒 | Generate or retrieve deposit address |
+| `getWithdrawalRecords(params)` | 🔒 | List withdrawal history |
+| `getDepositRecords(params)` | 🔒 | List deposit history |
+| `submitTransfer(params)` | 🔒 | Transfer between accounts |
+| `submitMainSubTransfer(params)` | 🔒 | Transfer between main and sub accounts |
+| `getMainSubTransfers(params)` | 🔒 | Get main/sub transfer records |
+| `getTransferStatus(params)` | 🔒 | Check status of a transfer |
+| `getWithdrawalStatus(params)` | 🔒 | Get withdrawal status for a currency |
+| `getSubBalance(params)` | 🔒 | Get sub-account balances |
+| `getTradingFees(params)` | 🔒 | Get trading fee schedule |
+| `getBalances(params)` | 🔒 | Get total wallet balance |
+| `getSmallBalances()` | 🔒 | Get small (dust) balances |
+| `convertSmallBalance(params)` | 🔒 | Convert small balances to GT |
+| `getSmallBalanceHistory(params)` | 🔒 | Get conversion history |
+| `getSavedAddresses(params)` | 🔒 | Get saved withdrawal addresses |
+
+```typescript
+const chains = await client.getCurrencyChains({ currency: 'USDT' });
+
+const depositAddress = await client.createDepositAddress({ currency: 'ETH' });
+
+const balances = await client.getBalances();
+```
+
+</Accordion>
+
+<Accordion title="Sub-accounts">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `createSubAccount(params)` | 🔒 | Create a new sub-account |
+| `getSubAccounts(params)` | 🔒 | List all sub-accounts |
+| `getSubAccount(params)` | 🔒 | Get a single sub-account by user ID |
+| `createSubAccountApiKey(params)` | 🔒 | Create an API key for a sub-account |
+| `getSubAccountApiKeys(params)` | 🔒 | List API keys for a sub-account |
+| `updateSubAccountApiKey(params)` | 🔒 | Update sub-account API key permissions |
+| `deleteSubAccountApiKey(params)` | 🔒 | Delete a sub-account API key |
+| `getSubAccountApiKey(params)` | 🔒 | Get details for a specific API key |
+| `lockSubAccount(params)` | 🔒 | Lock a sub-account |
+| `unlockSubAccount(params)` | 🔒 | Unlock a sub-account |
+| `getSubAccountMode()` | 🔒 | Get sub-account unified mode setting |
+
+```typescript
+const sub = await client.createSubAccount({ login_name: 'trader1' });
+
+await client.lockSubAccount({ user_id: sub.user_id });
+await client.unlockSubAccount({ user_id: sub.user_id });
+```
+
+</Accordion>
+
+<Accordion title="Unified Account">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getUnifiedAccountInfo(params)` | 🔒 | Get unified account details |
+| `setUnifiedAccountMode(params)` | 🔒 | Switch unified account mode |
+| `getUnifiedAccountMode()` | 🔒 | Get current unified account mode |
+| `getUnifiedMaxBorrow(params)` | 🔒 | Get max borrowable amount |
+| `getUnifiedMaxTransferable(params)` | 🔒 | Get max transferable amount |
+| `getUnifiedBatchMaxBorrowable(params)` | 🔒 | Batch query max borrowable amounts |
+| `submitUnifiedBorrowOrRepay(params)` | 🔒 | Submit borrow or repay request |
+| `getUnifiedLoans(params)` | 🔒 | List unified account loans |
+| `getUnifiedLoanRecords(params)` | 🔒 | Get loan records |
+| `getUnifiedInterestRecords(params)` | 🔒 | Get interest records |
+| `getUnifiedRiskUnitDetails()` | 🔒 | Get portfolio risk unit details |
+
+```typescript
+const accountInfo = await client.getUnifiedAccountInfo();
+
+await client.submitUnifiedBorrowOrRepay({
+  currency: 'USDT',
+  type: 'borrow',
+  amount: '1000',
+});
+
+const loans = await client.getUnifiedLoans();
+```
+
+</Accordion>
+
+<Accordion title="Spot Trading">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getSpotCurrencies()` | — | List all supported currencies |
+| `getSpotCurrencyPairs()` | — | List all currency pairs |
+| `getSpotTicker(params)` | — | Get ticker for one or all pairs |
+| `getSpotOrderBook(params)` | — | Get order book depth |
+| `getSpotTrades(params)` | — | Get recent trades |
+| `getSpotCandles(params)` | — | Get OHLCV candlestick data |
+| `getSpotFeeRates(params)` | — | Get fee rates |
+| `getSpotAccounts(params)` | 🔒 | Get spot account balances |
+| `submitSpotOrder(params)` | 🔒 | Place a new spot order |
+| `submitSpotBatchOrders(params)` | 🔒 | Place multiple orders in one request |
+| `getSpotOrders(params)` | 🔒 | List open or closed orders |
+| `getSpotOrder(params)` | 🔒 | Get a single order by ID |
+| `cancelSpotOrder(params)` | 🔒 | Cancel a single spot order |
+| `cancelSpotOpenOrders(params)` | 🔒 | Cancel all open orders for a pair |
+| `batchCancelSpotOrders(params)` | 🔒 | Cancel multiple orders by ID list |
+| `updateSpotOrder(params)` | 🔒 | Amend a pending order |
+| `getSpotTradingHistory(params)` | 🔒 | Get personal trade history |
+| `submitSpotPriceTriggerOrder(params)` | 🔒 | Place a price-triggered (stop) order |
+| `getSpotAutoOrders(params)` | 🔒 | List price-triggered orders |
+| `cancelAllOpenSpotOrders(params)` | 🔒 | Cancel all open spot orders |
+
+```typescript
+// Place a limit buy order
+const order = await client.submitSpotOrder({
+  currency_pair: 'BTC_USDT',
+  side: 'buy',
+  type: 'limit',
+  amount: '0.001',
+  price: '50000',
+});
+
+// Check its status
+const fetched = await client.getSpotOrder({
+  order_id: order.id,
+  currency_pair: 'BTC_USDT',
+});
+
+// Cancel it
+await client.cancelSpotOrder({
+  order_id: order.id,
+  currency_pair: 'BTC_USDT',
+});
+```
+
+</Accordion>
+
+<Accordion title="Margin Trading">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getMarginAccounts(params)` | 🔒 | Get isolated margin account balances |
+| `getMarginBalanceHistory(params)` | 🔒 | Get margin balance history |
+| `getFundingAccounts(params)` | 🔒 | Get funding account balances |
+| `getCrossMarginCurrencies()` | — | List cross margin supported currencies |
+| `getCrossMarginAccount()` | 🔒 | Get cross margin account details |
+| `getCrossMarginAccountHistory(params)` | 🔒 | Get cross margin account history |
+| `submitCrossMarginBorrowLoan(params)` | 🔒 | Create a cross margin borrow loan |
+| `getCrossMarginBorrowHistory(params)` | 🔒 | Get borrow history |
+| `submitCrossMarginRepayment(params)` | 🔒 | Submit a repayment |
+| `getCrossMarginRepayments(params)` | 🔒 | Get repayment records |
+| `getCrossMarginInterestRecords(params)` | 🔒 | Get interest records |
+| `getEstimatedInterestRates(params)` | 🔒 | Get estimated interest rates |
+
+```typescript
+const crossMarginAccount = await client.getCrossMarginAccount();
+
+await client.submitCrossMarginBorrowLoan({
+  currency: 'USDT',
+  amount: '500',
+});
+```
+
+</Accordion>
+
+<Accordion title="Perpetual Futures">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getFuturesContracts(params)` | — | List all futures contracts |
+| `getFuturesContract(params)` | — | Get details for a single contract |
+| `getFuturesOrderBook(params)` | — | Get futures order book |
+| `getFuturesTickers(params)` | — | Get futures ticker data |
+| `getFuturesCandles(params)` | — | Get futures candlestick data |
+| `getFundingRates(params)` | — | Get funding rate history |
+| `getFuturesInsuranceBalanceHistory(params)` | — | Get insurance fund history |
+| `getFuturesStats(params)` | — | Get trading statistics |
+| `getFuturesAccount(params)` | 🔒 | Get futures account details |
+| `getFuturesAccountBook(params)` | 🔒 | Get futures account ledger |
+| `getFuturesPositions(params)` | 🔒 | List open positions |
+| `getFuturesPosition(params)` | 🔒 | Get a single position |
+| `updateFuturesMargin(params)` | 🔒 | Update position margin |
+| `updateFuturesLeverage(params)` | 🔒 | Set leverage for a contract |
+| `submitFuturesOrder(params)` | 🔒 | Place a futures order |
+| `getFuturesOrders(params)` | 🔒 | List futures orders |
+| `cancelAllFuturesOrders(params)` | 🔒 | Cancel all open orders |
+| `getFuturesOrder(params)` | 🔒 | Get a single futures order |
+| `cancelFuturesOrder(params)` | 🔒 | Cancel a single futures order |
+| `updateFuturesOrder(params)` | 🔒 | Amend a futures order |
+| `getFuturesTradingHistory(params)` | 🔒 | Get personal trade history |
+| `submitFuturesTriggeredOrder(params)` | 🔒 | Place a price-triggered order |
+| `batchCancelFuturesOrders(params)` | 🔒 | Cancel multiple futures orders |
+| `batchUpdateFuturesOrders(params)` | 🔒 | Amend multiple futures orders |
+| `createTrailOrder(params)` | 🔒 | Create a trailing order |
+| `createChaseOrder(params)` | 🔒 | Create a price-chasing order |
+
+```typescript
+// Set leverage
+await client.updateFuturesLeverage({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  leverage: '10',
+});
+
+// Place a futures order
+const order = await client.submitFuturesOrder({
+  settle: 'usdt',
+  contract: 'BTC_USDT',
+  size: 1,
+  price: '50000',
+  tif: 'gtc',
+});
+
+// Cancel it
+await client.cancelFuturesOrder({
+  settle: 'usdt',
+  order_id: order.id,
+});
+```
+
+</Accordion>
+
+<Accordion title="Delivery Futures">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getAllDeliveryContracts(params)` | — | List all delivery contracts |
+| `getDeliveryContract(params)` | — | Get a single delivery contract |
+| `getDeliveryOrderBook(params)` | — | Get delivery order book |
+| `getDeliveryTrades(params)` | — | Get delivery trades |
+| `getDeliveryCandles(params)` | — | Get delivery candlestick data |
+| `getDeliveryTickers(params)` | — | Get delivery ticker data |
+| `getDeliveryAccount(params)` | 🔒 | Get delivery account balance |
+| `getDeliveryBook(params)` | 🔒 | Get delivery account ledger |
+| `getDeliveryPositions(params)` | 🔒 | List delivery positions |
+| `submitDeliveryOrder(params)` | 🔒 | Place a delivery futures order |
+| `getDeliveryOrders(params)` | 🔒 | List delivery orders |
+| `cancelAllDeliveryOrders(params)` | 🔒 | Cancel all open delivery orders |
+| `getDeliveryOrder(params)` | 🔒 | Get a delivery order by ID |
+| `cancelDeliveryOrder(params)` | 🔒 | Cancel a delivery order |
+| `getDeliveryTradingHistory(params)` | 🔒 | Get personal delivery trade history |
+| `getDeliveryClosedPositions(params)` | 🔒 | Get closed delivery positions |
+| `getDeliveryLiquidationHistory(params)` | 🔒 | Get liquidation records |
+| `getDeliverySettlementHistory(params)` | 🔒 | Get settlement history |
+| `submitDeliveryTriggeredOrder(params)` | 🔒 | Place a triggered delivery order |
+
+```typescript
+const contracts = await client.getAllDeliveryContracts({ settle: 'usdt' });
+
+const account = await client.getDeliveryAccount({ settle: 'usdt' });
+```
+
+</Accordion>
+
+<Accordion title="Options">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getOptionsUnderlyings()` | — | List all options underlyings |
+| `getOptionsExpirationTimes(params)` | — | Get expiration times |
+| `getOptionsContracts(params)` | — | List options contracts |
+| `getOptionsContract(params)` | — | Get a single options contract |
+| `getOptionsSettlementHistory(params)` | — | Get settlement history |
+| `getOptionsOrderBook(params)` | — | Get options order book |
+| `getOptionsTickers(params)` | — | Get options tickers |
+| `getOptionsCandles(params)` | — | Get options candlestick data |
+| `getOptionsTrades(params)` | — | Get options trades |
+| `getOptionsAccount()` | 🔒 | Get options account details |
+| `getOptionsPositionsUnderlying(params)` | 🔒 | Get positions by underlying |
+| `submitOptionsOrder(params)` | 🔒 | Place an options order |
+| `getOptionsOrders(params)` | 🔒 | List options orders |
+| `cancelAllOpenOptionsOrders(params)` | 🔒 | Cancel all open options orders |
+| `getOptionsOrder(params)` | 🔒 | Get a single options order |
+| `amendOptionsOrder(params)` | 🔒 | Amend an options order |
+| `cancelOptionsOrder(params)` | 🔒 | Cancel an options order |
+| `getOptionsPersonalHistory(params)` | 🔒 | Get personal options trade history |
+| `setOptionsMMPSettings(params)` | 🔒 | Configure Market Maker Protection |
+
+```typescript
+const underlyings = await client.getOptionsUnderlyings();
+
+const contracts = await client.getOptionsContracts({
+  underlying: 'BTC_USDT',
+});
+
+await client.submitOptionsOrder({
+  contract: 'BTC_USDT-20250101-50000-C',
+  size: 1,
+  price: '500',
+});
+```
+
+</Accordion>
+
+<Accordion title="Cross Exchange (CrossEx)">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getCrossExSymbols(params)` | — | List CrossEx trading symbols |
+| `getCrossExRiskLimits(params)` | — | Get risk limit configuration |
+| `getCrossExTransferCoins(params)` | — | Get transferable coins |
+| `createCrossExTransfer(params)` | 🔒 | Create a CrossEx transfer |
+| `getCrossExTransferHistory(params)` | 🔒 | Get transfer history |
+| `createCrossExOrder(params)` | 🔒 | Place a CrossEx order |
+| `cancelCrossExOrder(order_id)` | 🔒 | Cancel a CrossEx order |
+| `modifyCrossExOrder(params)` | 🔒 | Modify a CrossEx order |
+| `getCrossExOrder(order_id)` | 🔒 | Get a CrossEx order |
+| `updateCrossExAccount(params)` | 🔒 | Update account settings |
+| `getCrossExAccounts(params)` | 🔒 | Get CrossEx account balances |
+| `getCrossExPositions(params)` | 🔒 | List CrossEx positions |
+| `getCrossExOpenOrders(params)` | 🔒 | List open CrossEx orders |
+| `getCrossExHistoryOrders(params)` | 🔒 | Get CrossEx order history |
+| `getCrossExHistoryTrades(params)` | 🔒 | Get CrossEx trade history |
+
+```typescript
+const symbols = await client.getCrossExSymbols();
+
+const order = await client.createCrossExOrder({
+  symbol: 'BTC_USDT',
+  side: 'buy',
+  qty: '0.001',
+  price: '50000',
+});
+
+const positions = await client.getCrossExPositions();
+```
+
+</Accordion>
+
+<Accordion title="Alpha">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getAlphaCurrencies(params)` | — | List Alpha market currencies |
+| `getAlphaTickers(params)` | — | Get Alpha market tickers |
+| `getAlphaAccounts()` | 🔒 | Get Alpha account balances |
+| `getAlphaAccountBook(params)` | 🔒 | Get Alpha account history |
+| `createAlphaQuote(params)` | 🔒 | Get a quote for an Alpha trade |
+| `createAlphaOrder(params)` | 🔒 | Place an Alpha market order |
+| `getAlphaOrders(params)` | 🔒 | List Alpha orders |
+| `getAlphaOrder(params)` | 🔒 | Get a single Alpha order |
+
+```typescript
+const currencies = await client.getAlphaCurrencies();
+const tickers = await client.getAlphaTickers();
+
+const order = await client.createAlphaOrder({
+  currency_pair: 'TOKEN_USDT',
+  side: 'buy',
+  amount: '100',
+});
+```
+
+</Accordion>
+
+<Accordion title="OTC">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `createOTCQuote(params)` | 🔒 | Request an OTC quote |
+| `createOTCFiatOrder(params)` | 🔒 | Place a fiat OTC order |
+| `createOTCStablecoinOrder(params)` | 🔒 | Place a stablecoin OTC order |
+| `getOTCBankList()` | 🔒 | Get registered bank accounts |
+| `createOTCBank(params)` | 🔒 | Register a new bank account |
+| `cancelOTCOrder(params)` | 🔒 | Cancel an OTC order |
+| `getOTCFiatOrderList(params)` | 🔒 | List fiat OTC orders |
+| `getOTCStablecoinOrderList(params)` | 🔒 | List stablecoin OTC orders |
+| `getOTCFiatOrderDetail(params)` | 🔒 | Get OTC order details |
+| `markOTCOrderAsPaid(params)` | 🔒 | Mark a fiat order as paid |
+
+```typescript
+const quote = await client.createOTCQuote({
+  base: 'BTC',
+  quote: 'USDT',
+  base_amount: '0.1',
+  side: 'sell',
+});
+```
+
+</Accordion>
+
+<Accordion title="Flash Swap">
+
+| Method | Auth | Description |
+|--------|------|-------------|
+| `getFlashSwapCurrencyPairs(params)` | — | List supported flash swap pairs |
+| `submitFlashSwapOrder(params)` | 🔒 | Execute a flash swap |
+| `getFlashSwapOrders(params)` | 🔒 | List flash swap orders |
+| `getFlashSwapOrder(params)` | 🔒 | Get a single flash swap order |
+| `submitFlashSwapOrderPreview(params)` | 🔒 | Preview a flash swap (get quote) |
+
+```typescript
+const pairs = await client.getFlashSwapCurrencyPairs();
+
+const preview = await client.submitFlashSwapOrderPreview({
+  sell_currency: 'USDT',
+  sell_amount: '100',
+  buy_currency: 'BTC',
+});
+
+const swap = await client.submitFlashSwapOrder({
+  sell_currency: 'USDT',
+  sell_amount: '100',
+  buy_currency: 'BTC',
+  preview_id: preview.preview_id,
+});
+```
+
+</Accordion>
+
+<Accordion title="Earn, Auto-Invest, and Lending">
+
+The SDK includes a comprehensive set of earn and yield product endpoints:
+
+**Simple Earn / Lending (Uni)**
+- `getLendingCurrencies()` — list lendable currencies
+- `submitLendOrRedeemOrder(params)` — lend or redeem assets
+- `getLendingOrders(params)` — list lending orders
+- `getLendingRecords(params)` — get lending history
+- `getLendingInterestRecords(params)` — get interest records
+
+**Multi-Collateral Loans**
+- `submitMultiLoanOrder(params)` — create a multi-collateral loan
+- `getMultiLoanOrders(params)` — list multi-loan orders
+- `repayMultiLoan(params)` — repay a multi-collateral loan
+- `getMultiLoanRepayRecords(params)` — get repayment records
+- `updateMultiLoan(params)` — update collateral
+- `getMultiLoanSupportedCurrencies()` — list supported currencies
+
+**Dual Investment**
+- `getDualInvestmentProducts(params)` — browse dual investment products
+- `getDualInvestmentOrders(params)` — list orders
+- `submitDualInvestmentOrder(params)` — place an order
+- `getDualOrderRefundPreview(params)` — preview a refund
+- `submitDualOrderRefund(params)` — request a refund
+
+**Fixed-Term Earn**
+- `getEarnFixedTermProducts(params)` — list fixed-term products
+- `createEarnFixedTermLend(params)` — subscribe to a fixed-term product
+- `getEarnFixedTermLends(params)` — list your fixed-term positions
+- `createEarnFixedTermPreRedeem(params)` — pre-redeem a fixed-term position
+- `getEarnFixedTermHistory(params)` — get earn history
+
+**Auto-Invest Plans**
+- `createAutoInvestPlan(params)` — create a DCA plan
+- `updateAutoInvestPlan(params)` — update a DCA plan
+- `stopAutoInvestPlan(params)` — stop a DCA plan
+- `getAutoInvestPlans(params)` — list DCA plans
+- `getAutoInvestPlanDetail(params)` — get plan details
+- `getAutoInvestOrders(params)` — list DCA order executions
+
+</Accordion>
+
+</AccordionGroup>
+
+## Complete Endpoint List
+
+For the authoritative, always-up-to-date list of every method, its authentication requirement, HTTP method, and exact API endpoint path, refer to:
+
+[**`docs/endpointFunctionList.md` on GitHub**](https://github.com/tiagosiebler/gateio-api/blob/master/docs/endpointFunctionList.md)
+
+## TypeScript Support
+
+All request parameter types and response shapes are exported from the package. Import them alongside the client:
+
+```typescript
+import {
+  RestClient,
+  RestClientOptions,
+} from 'gateio-api';
+
+// Request and response types are available from the package exports
+import type { SubmitSpotOrderReq, SpotOrder } from 'gateio-api';
+```
+
+The SDK is written entirely in TypeScript, so your IDE will provide full autocompletion and inline documentation for every method parameter and return type.

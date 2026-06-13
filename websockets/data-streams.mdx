@@ -1,0 +1,366 @@
+---
+title: "Real-Time Data Streams with Gate.io WebSocket Client"
+sidebarTitle: "Data Streams"
+description: "Subscribe to Gate.com real-time market data and private account events using WebsocketClient. Covers public topics, private topics, and multi-topic subscriptions."
+---
+
+The `WebsocketClient` makes it straightforward to receive live data from Gate.com — from ticker prices and order books to your own private order fills and balance changes. You subscribe to one or more **topics** on a specific **WsKey** (the connection identifier), attach event handlers, and the SDK delivers a continuous stream of updates. All connection management, authentication, and reconnection logic runs in the background without any extra code on your part.
+
+## Instantiation
+
+Install the package and create a client instance. For public topics, no credentials are needed. For private topics, pass `apiKey` and `apiSecret`:
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+// Public-only (no credentials needed)
+const ws = new WebsocketClient();
+
+// Private streams (credentials required)
+const wsPrivate = new WebsocketClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+```
+
+## How `subscribe()` Works
+
+`subscribe(requests, wsKey)` accepts a single topic or an array of topics, plus the WsKey that identifies which WebSocket connection to use. The connection is opened automatically if it is not already active.
+
+Topics can be passed as plain strings (for topics that require no parameters) or as `WsTopicRequest` objects containing a `topic` and an optional `payload` array:
+
+```typescript
+// Single string topic — no parameters
+ws.subscribe('spot.balances', 'spotV4');
+
+// Single object topic — with parameters
+ws.subscribe({ topic: 'spot.tickers', payload: ['BTC_USDT'] }, 'spotV4');
+
+// Array of mixed strings and objects in one call
+ws.subscribe(
+  [
+    'spot.balances',
+    { topic: 'spot.tickers', payload: ['BTC_USDT', 'ETH_USDT'] },
+    { topic: 'spot.trades',  payload: ['BTC_USDT'] },
+  ],
+  'spotV4',
+);
+```
+
+## How `unsubscribe()` Works
+
+`unsubscribe(requests, wsKey)` mirrors `subscribe()` exactly. The SDK removes the topics from its internal cache so they are not resubscribed after a reconnect:
+
+```typescript
+ws.unsubscribe({ topic: 'spot.tickers', payload: ['BTC_USDT'] }, 'spotV4');
+ws.unsubscribe('spot.balances', 'spotV4');
+```
+
+## Public Topics
+
+Public topics do not require authentication and are available on all WsKeys. The examples below use `spotV4`.
+
+<Tabs>
+  <Tab title="Tickers">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient();
+
+    ws.on('update', (data) => console.log('ticker update:', JSON.stringify(data)));
+    ws.on('open',   ({ wsKey }) => console.log('connected:', wsKey));
+
+    const tickers: WsTopicRequest = {
+      topic: 'spot.tickers',
+      payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+    };
+
+    ws.subscribe(tickers, 'spotV4');
+    ```
+  </Tab>
+  <Tab title="Order Book">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient();
+
+    ws.on('update', (data) => console.log('order book update:', JSON.stringify(data)));
+
+    const orderBook: WsTopicRequest = {
+      topic: 'spot.order_book',
+      payload: ['BTC_USDT', '5', '100ms'],
+    };
+
+    ws.subscribe(orderBook, 'spotV4');
+    ```
+  </Tab>
+  <Tab title="Trades">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient();
+
+    ws.on('update', (data) => console.log('trade update:', JSON.stringify(data)));
+
+    const trades: WsTopicRequest = {
+      topic: 'spot.trades',
+      payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+    };
+
+    ws.subscribe(trades, 'spotV4');
+    ```
+  </Tab>
+  <Tab title="Candlesticks">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient();
+
+    ws.on('update', (data) => console.log('candle update:', JSON.stringify(data)));
+
+    const candles: WsTopicRequest = {
+      topic: 'spot.candlesticks',
+      payload: ['1m', 'BTC_USDT'],
+    };
+
+    ws.subscribe(candles, 'spotV4');
+    ```
+  </Tab>
+</Tabs>
+
+## Private Topics
+
+Private topics stream your own account activity such as order fills, balance changes, and price-triggered orders. The client authenticates the connection automatically when it detects a private topic — no explicit login call is needed.
+
+<Tabs>
+  <Tab title="Spot Private">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient({
+      apiKey: process.env.API_KEY,
+      apiSecret: process.env.API_SECRET,
+    });
+
+    ws.on('update',        (data) => console.info('data received:', JSON.stringify(data)));
+    ws.on('open',          ({ wsKey }) => console.log('connected:', wsKey));
+    ws.on('authenticated', ({ wsKey }) => console.log('authenticated:', wsKey));
+    ws.on('response',      (data) => console.info('server reply:', JSON.stringify(data)));
+    ws.on('exception',     (data) => console.error('exception:', data));
+
+    const userOrders: WsTopicRequest = {
+      topic: 'spot.orders',
+      payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+    };
+
+    const userTrades: WsTopicRequest = {
+      topic: 'spot.usertrades',
+      payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+    };
+
+    const userPriceOrders: WsTopicRequest = {
+      topic: 'spot.priceorders',
+      payload: ['!all'],
+    };
+
+    // Subscribe to several private topics in a single call
+    ws.subscribe(
+      [
+        'spot.balances',
+        'spot.margin_balances',
+        'spot.funding_balances',
+        'spot.cross_balances',
+        userOrders,
+        userTrades,
+        userPriceOrders,
+      ],
+      'spotV4',
+    );
+    ```
+  </Tab>
+  <Tab title="Futures Private">
+    ```typescript
+    import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+    const ws = new WebsocketClient({
+      apiKey: process.env.API_KEY,
+      apiSecret: process.env.API_SECRET,
+    });
+
+    ws.on('update',    (data) => console.info('data received:', JSON.stringify(data)));
+    ws.on('open',      ({ wsKey }) => console.log('connected:', wsKey));
+    ws.on('exception', (data) => console.error('exception:', data));
+
+    // Replace with your Gate.com user ID
+    const myUserID = '20011';
+
+    const userBalances: WsTopicRequest = {
+      topic: 'futures.balances',
+      payload: [myUserID],
+    };
+
+    const userTrades: WsTopicRequest = {
+      topic: 'futures.usertrades',
+      payload: [myUserID, '!all'],
+    };
+
+    const userLiquidates: WsTopicRequest = {
+      topic: 'futures.liquidates',
+      payload: [myUserID, '!all'],
+    };
+
+    ws.subscribe(
+      [userBalances, userTrades, userLiquidates],
+      'perpFuturesUSDTV4',
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Spot vs Futures Subscription Reference
+
+<CodeGroup>
+```typescript Spot Topics (spotV4)
+import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+// Public spot topics
+ws.subscribe({ topic: 'spot.tickers',     payload: ['BTC_USDT'] }, 'spotV4');
+ws.subscribe({ topic: 'spot.order_book',  payload: ['BTC_USDT', '5', '100ms'] }, 'spotV4');
+ws.subscribe({ topic: 'spot.trades',      payload: ['BTC_USDT'] }, 'spotV4');
+ws.subscribe({ topic: 'spot.candlesticks', payload: ['1m', 'BTC_USDT'] }, 'spotV4');
+
+// Private spot topics (connection authenticates automatically)
+ws.subscribe('spot.balances', 'spotV4');
+ws.subscribe({ topic: 'spot.orders',      payload: ['BTC_USDT'] }, 'spotV4');
+ws.subscribe({ topic: 'spot.usertrades',  payload: ['BTC_USDT'] }, 'spotV4');
+ws.subscribe({ topic: 'spot.priceorders', payload: ['!all'] },     'spotV4');
+```
+
+```typescript Futures Topics (perpFuturesUSDTV4)
+import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+const myUserID = '20011';
+
+// Public futures topics
+ws.subscribe({ topic: 'futures.tickers',    payload: ['BTC_USDT'] }, 'perpFuturesUSDTV4');
+ws.subscribe({ topic: 'futures.order_book', payload: ['BTC_USDT', '5', '100ms'] }, 'perpFuturesUSDTV4');
+
+// Private futures topics
+ws.subscribe({ topic: 'futures.orders',    payload: [myUserID, '!all'] }, 'perpFuturesUSDTV4');
+ws.subscribe({ topic: 'futures.positions', payload: [myUserID, '!all'] }, 'perpFuturesUSDTV4');
+ws.subscribe({ topic: 'futures.balances',  payload: [myUserID] },         'perpFuturesUSDTV4');
+```
+</CodeGroup>
+
+## Event Handlers Reference
+
+Attach handlers using `ws.on(event, callback)`. All handlers receive an object that always includes the `wsKey` that fired the event.
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+// Primary data handler — fires for every incoming stream message
+ws.on('update', (data) => {
+  console.info('data received:', JSON.stringify(data));
+});
+
+// Fires when a WebSocket connection is first opened
+ws.on('open', ({ wsKey }) => {
+  console.log('connection open:', wsKey);
+});
+
+// Fires when the server sends a reply to subscribe/unsubscribe/auth requests
+ws.on('response', (data) => {
+  console.info('server reply:', JSON.stringify(data));
+});
+
+// Fires when a connection closes — if unexpected, a reconnect will follow
+ws.on('close', ({ wsKey }) => {
+  console.error('connection closed:', wsKey);
+});
+
+// Fires after a successful automatic reconnect
+ws.on('reconnected', ({ wsKey }) => {
+  console.log('reconnected:', wsKey);
+});
+
+// Fires when an internal SDK exception occurs (e.g. authentication failure)
+ws.on('exception', (data) => {
+  console.error('exception:', data);
+});
+
+// Fires on raw WebSocket-level errors
+ws.on('error', (err) => {
+  console.error('ws error:', err);
+});
+```
+
+## Full Working Example
+
+The following example combines public and private spot subscriptions with complete event handling:
+
+```typescript
+import { WebsocketClient, WsTopicRequest } from 'gateio-api';
+
+async function start() {
+  const ws = new WebsocketClient({
+    apiKey: process.env.API_KEY || 'apiKeyHere',
+    apiSecret: process.env.API_SECRET || 'apiSecretHere',
+  });
+
+  // Lifecycle events
+  ws.on('open',          ({ wsKey }) => console.log('connected:', wsKey));
+  ws.on('reconnect',     (data) =>     console.log('reconnecting...', data));
+  ws.on('reconnected',   (data) =>     console.log('reconnected:', data?.wsKey));
+  ws.on('close',         (data) =>     console.error('closed:', data));
+  ws.on('authenticated', ({ wsKey }) => console.log('authenticated:', wsKey));
+
+  // Data and diagnostics
+  ws.on('update',    (data) => console.info('data:', JSON.stringify(data)));
+  ws.on('response',  (data) => console.info('server reply:', JSON.stringify(data)));
+  ws.on('exception', (data) => console.error('exception:', data));
+
+  // --- Public topics ---
+  const tickers: WsTopicRequest = {
+    topic: 'spot.tickers',
+    payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+  };
+
+  const trades: WsTopicRequest = {
+    topic: 'spot.trades',
+    payload: ['BTC_USDT', 'ETH_USDT', 'MATIC_USDT'],
+  };
+
+  ws.subscribe([tickers, trades], 'spotV4');
+
+  // --- Private topics (authenticate automatically) ---
+  const orders: WsTopicRequest = {
+    topic: 'spot.orders',
+    payload: ['BTC_USDT', 'ETH_USDT'],
+  };
+
+  const userTrades: WsTopicRequest = {
+    topic: 'spot.usertrades',
+    payload: ['BTC_USDT', 'ETH_USDT'],
+  };
+
+  ws.subscribe(['spot.balances', orders, userTrades], 'spotV4');
+}
+
+start();
+```

@@ -1,0 +1,519 @@
+---
+title: "WebsocketAPIClient Class Reference for Gate.io SDK"
+sidebarTitle: "WebsocketAPIClient"
+description: "Reference for the Gate.io SDK WebsocketAPIClient — a promise-based REST-like interface for trading over WebSocket. Documents all spot and futures methods."
+---
+
+The `WebsocketAPIClient` is a high-level convenience wrapper around `WebsocketClient` that exposes Gate.io's WebSocket API as a set of typed, promise-returning methods. Instead of calling `sendWSAPIRequest()` directly with raw channel strings, you call named methods like `submitNewSpotOrder()` or `submitNewFuturesOrder()` and receive strongly-typed responses. Under the hood, every method delegates to the embedded `WebsocketClient`, so all the same connection management, auto-reconnect, and re-authentication logic applies.
+
+For the conceptual overview of how the WS API works, including topic structure and authentication flow, see the [WebsocketClient reference](/api-reference/websocket-client).
+
+## Installation and Import
+
+```typescript
+import { WebsocketAPIClient } from 'gateio-api';
+```
+
+## Constructor
+
+```typescript
+new WebsocketAPIClient(
+  options?: WSClientConfigurableOptions & Partial<WSAPIClientConfigurableOptions>,
+  logger?: DefaultLogger,
+)
+```
+
+The constructor accepts a merged options object that combines `WSClientConfigurableOptions` (the same options as `WebsocketClient`) with the `WSAPIClientConfigurableOptions` fields specific to this client.
+
+<ParamField path="options" type="WSClientConfigurableOptions & Partial<WSAPIClientConfigurableOptions>" optional>
+  All options are optional.
+
+  <ParamField path="apiKey" type="string" optional>
+    Your Gate.io API key. Required to call any trading method — all WS API operations are authenticated.
+  </ParamField>
+
+  <ParamField path="apiSecret" type="string" optional>
+    Your Gate.io API secret. Required for request signing.
+  </ParamField>
+
+  <ParamField path="useTestnet" type="boolean" optional>
+    Default: `false`. When `true`, connects to Gate.io testnet WebSocket endpoints. Do not pass a custom `wsKey` when using testnet — set this flag instead.
+  </ParamField>
+
+  <ParamField path="recvWindow" type="number" optional>
+    Milliseconds added to the current timestamp when generating a WS API request signature. Useful for adjusting for minor clock skew between your system and Gate.io's servers.
+  </ParamField>
+
+  <ParamField path="pingInterval" type="number" optional>
+    How often (in milliseconds) the underlying WebSocket connection sends a heartbeat ping.
+  </ParamField>
+
+  <ParamField path="pongTimeout" type="number" optional>
+    How long (in milliseconds) to wait for a pong reply before treating the connection as dead.
+  </ParamField>
+
+  <ParamField path="reconnectTimeout" type="number" optional>
+    Delay in milliseconds before attempting to reconnect after a dropped connection.
+  </ParamField>
+
+  <ParamField path="reauthWSAPIOnReconnect" type="boolean" optional>
+    Default: `true`. When `true`, the SDK automatically re-authenticates the WS API connection after any reconnect. Emits `authenticated` on success or `exception` (type `wsapi.auth`) after repeated failures. Set to `false` to handle re-authentication yourself via `getWSClient().on('reconnected', ...)`.
+  </ParamField>
+
+  <ParamField path="attachEventListeners" type="boolean" optional>
+    Default: `true`. When `true`, the `WebsocketAPIClient` automatically attaches default `console.log` / `console.error` event listeners to the embedded `WebsocketClient` for high-level lifecycle events (`open`, `reconnect`, `reconnected`, `authenticated`, `exception`). Set to `false` if you want to configure your own listeners exclusively — you should then call `getWSClient().on(...)` to set them up.
+  </ParamField>
+
+  <ParamField path="customSignMessageFn" type="(message: string, secret: string) => Promise<string>" optional>
+    Provide a custom HMAC signing function. Useful for using Node.js's `createHmac` for faster signature generation. See the examples folder in the repository for a demonstration.
+  </ParamField>
+</ParamField>
+
+<ParamField path="logger" type="DefaultLogger" optional>
+  A custom logger instance passed through to the embedded `WebsocketClient`.
+</ParamField>
+
+## Utility Methods
+
+### `getWSClient()`
+
+```typescript
+getWSClient(): WebsocketClient
+```
+
+Returns the underlying `WebsocketClient` instance. Use this to attach event listeners, subscribe to market data topics, or call `sendWSAPIRequest()` directly for channels not yet covered by named methods.
+
+```typescript
+const wsApiClient = new WebsocketAPIClient({ apiKey: '...', apiSecret: '...' });
+
+// Access the underlying client for event handling
+wsApiClient.getWSClient().on('update', (data) => {
+  console.log('Market data:', data);
+});
+
+// Subscribe to market data alongside WS API usage
+wsApiClient.getWSClient().subscribe('spot.tickers', 'spotV4');
+```
+
+### `setTimeOffsetMs(offset)`
+
+```typescript
+setTimeOffsetMs(newOffset: number): void
+```
+
+Adjusts the timestamp used when generating request signatures by the given number of milliseconds. Useful if your server's clock is drifting relative to Gate.io's servers and you are seeing timestamp validation errors.
+
+```typescript
+// Add 500ms to all request timestamps
+wsApiClient.setTimeOffsetMs(500);
+```
+
+## `WSAPIResponse<T>` Shape
+
+Every trading method returns `Promise<WSAPIResponse<T>>`. The response object has the following structure:
+
+```typescript
+interface WSAPIResponse<TResponseData, TChannel> {
+  wsKey: WsKey;            // which connection handled this request
+  header: {
+    response_time: string; // server timestamp in ms (as string)
+    status: '200' | string; // '200' on success; exception thrown otherwise
+    channel: TChannel;     // the WS API channel (e.g. 'spot.order_place')
+    event: 'api';
+    client_id: string;
+  };
+  data: {
+    result: TResponseData; // the actual response payload
+  };
+  request_id: string;      // SDK-generated request identifier
+}
+```
+
+Access the result payload via `response.data.result`.
+
+## The Optional `wsKey` Parameter
+
+Every trading method accepts an optional `wsKey` as its last argument. This lets you route the request through a specific WebSocket connection — for example, to use a BTC-settled futures connection instead of the default USDT-settled one.
+
+- Spot methods default to `WS_KEY_MAP.spotV4`
+- Futures methods default to `WS_KEY_MAP.perpFuturesUSDTV4`
+
+To use BTC-settled perpetual futures:
+
+```typescript
+import { WS_KEY_MAP } from 'gateio-api';
+
+await wsApiClient.submitNewFuturesOrder(params, WS_KEY_MAP.perpFuturesBTCV4);
+```
+
+<AccordionGroup>
+
+<Accordion title="Spot Trading Methods">
+
+All spot methods route through the `spotV4` WebSocket connection by default.
+
+### `submitNewSpotOrder(params, wsKey?)`
+
+```typescript
+submitNewSpotOrder(
+  params: WSAPISpotOrderPlaceReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder>>
+```
+
+Place a new spot order. Equivalent to the REST `POST /spot/orders` endpoint but executed over WebSocket.
+
+**Key parameters:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `currency_pair` | `string` | ✅ | Trading pair, e.g. `'BTC_USDT'` |
+| `side` | `'buy' \| 'sell'` | ✅ | Order side |
+| `amount` | `string` | ✅ | Order amount |
+| `type` | `'limit' \| 'market'` | — | Default: `'limit'` |
+| `price` | `string` | — | Required for limit orders |
+| `time_in_force` | `'gtc' \| 'ioc' \| 'poc' \| 'fok'` | — | Time in force |
+| `account` | `'spot' \| 'margin' \| 'unified' \| 'cross_margin'` | — | Account type |
+| `auto_borrow` | `boolean` | — | Auto-borrow for margin |
+| `auto_repay` | `boolean` | — | Auto-repay after fill |
+| `stp_act` | `'cn' \| 'co' \| 'cb'` | — | Self-trade prevention action |
+| `action_mode` | `'ACK' \| 'RESULT' \| 'FULL'` | — | Response detail level |
+| `text` | `string` | — | Custom order label |
+
+### `cancelSpotOrder(params, wsKey?)`
+
+```typescript
+cancelSpotOrder(
+  params: WSAPISpotOrderCancelReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder>>
+```
+
+Cancel a single spot order by its order ID and currency pair.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `order_id` | `string` | ✅ | The order ID to cancel |
+| `currency_pair` | `string` | ✅ | Trading pair |
+| `account` | `string` | — | Account type |
+
+### `cancelSpotOrderById(params, wsKey?)`
+
+```typescript
+cancelSpotOrderById(
+  params: WSAPISpotOrderCancelIdsReq[],
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrderCancelIdsRespItem[]>>
+```
+
+Cancel multiple spot orders by providing an array of `{ id, currency_pair }` objects. Returns an array of results, one per requested cancellation, each with a `succeeded` boolean.
+
+### `cancelSpotOrderForSymbol(params, wsKey?)`
+
+```typescript
+cancelSpotOrderForSymbol(
+  params: WSAPISpotOrderCancelCPReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder[]>>
+```
+
+Cancel all open spot orders for a specific currency pair, optionally filtered by side.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `currency_pair` | `string` | ✅ | Trading pair |
+| `side` | `'buy' \| 'sell'` | — | Filter by order side |
+| `account` | `string` | — | Account type |
+
+### `updateSpotOrder(params, wsKey?)`
+
+```typescript
+updateSpotOrder(
+  params: WSAPISpotOrderAmendReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder>>
+```
+
+Amend (modify) an open spot order. You can update the price, amount, or both.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `order_id` | `string` | ✅ | Order to amend |
+| `currency_pair` | `string` | ✅ | Trading pair |
+| `price` | `string` | — | New price |
+| `amount` | `string` | — | New amount |
+| `amend_text` | `string` | — | Custom amendment note |
+| `account` | `string` | — | Account type |
+
+### `getSpotOrderStatus(params, wsKey?)`
+
+```typescript
+getSpotOrderStatus(
+  params: WSAPISpotOrderStatusReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder>>
+```
+
+Fetch the current status of a single spot order.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `order_id` | `string` | ✅ | Order ID |
+| `currency_pair` | `string` | ✅ | Trading pair |
+| `account` | `string` | — | Account type |
+
+### `getSpotOrders(params, wsKey?)`
+
+```typescript
+getSpotOrders(
+  params: WSAPISpotOrderListReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPISpotOrder[]>>
+```
+
+List spot orders with flexible filtering options.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `currency_pair` | `string` | ✅ | Trading pair |
+| `status` | `'open' \| 'finished'` | ✅ | Filter by order status |
+| `page` | `number` | — | Page number |
+| `limit` | `number` | — | Results per page |
+| `account` | `string` | — | Account type |
+| `from` | `number` | — | Start timestamp (Unix seconds) |
+| `to` | `number` | — | End timestamp (Unix seconds) |
+| `side` | `'buy' \| 'sell'` | — | Filter by side |
+
+</Accordion>
+
+<Accordion title="Futures Trading Methods">
+
+All futures methods default to the `perpFuturesUSDTV4` connection (USDT-settled perpetual futures). Pass an explicit `wsKey` to route to a different futures connection.
+
+### `submitNewFuturesOrder(params, wsKey?)`
+
+```typescript
+submitNewFuturesOrder(
+  params: WSAPIFuturesOrderPlaceReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder>>
+```
+
+Place a single perpetual futures order. Defaults to the USDT-settled perpetual futures connection.
+
+### `submitNewFuturesBatchOrder(params, wsKey?)`
+
+```typescript
+submitNewFuturesBatchOrder(
+  params: WSAPIFuturesOrderPlaceReq[],
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrderBatchPlaceRespItem[]>>
+```
+
+Submit an array of futures orders in a single WS API call. Returns an array of result items, each extending `WSAPIFuturesOrder` with a `succeeded` boolean.
+
+### `cancelFuturesOrder(params, wsKey?)`
+
+```typescript
+cancelFuturesOrder(
+  params: WSAPIFuturesOrderCancelReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder>>
+```
+
+Cancel a single open futures order by ID.
+
+### `cancelFuturesOrderById(params, wsKey?)`
+
+```typescript
+cancelFuturesOrderById(
+  params: string[],
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrderCancelIdsRespItem[]>>
+```
+
+Cancel multiple futures orders by providing an array of order ID strings. Returns one result item per order with an optional `succeeded` field and `message` on failure.
+
+### `cancelFuturesAllOpenOrders(params, wsKey?)`
+
+```typescript
+cancelFuturesAllOpenOrders(
+  params: WSAPIFuturesOrderCancelCPReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder[]>>
+```
+
+Cancel all open futures orders for a specific contract, optionally filtered by side.
+
+### `updateFuturesOrder(params, wsKey?)`
+
+```typescript
+updateFuturesOrder(
+  params: WSAPIFuturesOrderAmendReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder>>
+```
+
+Amend (modify) an open futures order's price or size.
+
+### `getFuturesOrders(params, wsKey?)`
+
+```typescript
+getFuturesOrders(
+  params: WSAPIFuturesOrderListReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder[]>>
+```
+
+List futures orders with filtering options.
+
+### `getFuturesOrderStatus(params, wsKey?)`
+
+```typescript
+getFuturesOrderStatus(
+  params: WSAPIFuturesOrderStatusReq,
+  wsKey?: WSAPIWsKey,
+): Promise<WSAPIResponse<WSAPIFuturesOrder>>
+```
+
+Fetch the current status of a single futures order.
+
+**`WSAPIFuturesOrder` response shape:**
+
+```typescript
+interface WSAPIFuturesOrder {
+  id: number;
+  user: number;
+  create_time: number;
+  finish_time?: number;
+  update_time?: number;
+  finish_as?: string;
+  status: string;       // 'open' | 'finished' | 'cancelled'
+  contract: string;     // e.g. 'BTC_USDT'
+  size: number;         // order size in contracts
+  price: string;
+  tif: string;          // time in force
+  left?: number;        // unfilled size
+  fill_price: string;
+  text: string;
+  tkfr: string;         // taker fee rate
+  mkfr: string;         // maker fee rate
+  stp_id?: number;
+  stp_act?: string;
+  amend_text?: string;
+}
+```
+
+</Accordion>
+
+</AccordionGroup>
+
+## Full Working Example
+
+The following example demonstrates the complete flow: construct the client, configure event listeners, place a spot order, check its status, and cancel it.
+
+```typescript
+import { WebsocketAPIClient, WS_KEY_MAP } from 'gateio-api';
+
+async function main() {
+  // 1. Construct the client
+  const wsApiClient = new WebsocketAPIClient({
+    apiKey: 'YOUR_API_KEY',
+    apiSecret: 'YOUR_API_SECRET',
+    // attachEventListeners: true (default) logs lifecycle events to console
+    // Set to false and configure your own listeners below if preferred
+  });
+
+  // 2. Configure event listeners on the underlying WS client
+  //    (the default attachEventListeners already logs open/reconnect/etc.)
+  wsApiClient.getWSClient().on('update', (data) => {
+    // Real-time order updates (if you also subscribe to 'spot.orders')
+    if (data.channel === 'spot.orders') {
+      console.log('Order update received:', data.result);
+    }
+  });
+
+  wsApiClient.getWSClient().on('exception', (data) => {
+    console.error('WS exception:', JSON.stringify(data, null, 2));
+  });
+
+  // 3. Place a limit buy order
+  let orderId: string;
+  try {
+    const placeResp = await wsApiClient.submitNewSpotOrder({
+      currency_pair: 'BTC_USDT',
+      side: 'buy',
+      type: 'limit',
+      amount: '0.001',
+      price: '50000',
+      time_in_force: 'gtc',
+      text: 't-my-bot-order-1',
+    });
+
+    const order = placeResp.data.result;
+    orderId = order.id;
+    console.log(`Order placed. ID: ${orderId}, status: ${order.status}`);
+  } catch (err) {
+    console.error('Failed to place order:', err);
+    return;
+  }
+
+  // 4. Check order status
+  const statusResp = await wsApiClient.getSpotOrderStatus({
+    order_id: orderId,
+    currency_pair: 'BTC_USDT',
+  });
+  console.log('Order status:', statusResp.data.result.status);
+
+  // 5. Update the order price
+  const amendResp = await wsApiClient.updateSpotOrder({
+    order_id: orderId,
+    currency_pair: 'BTC_USDT',
+    price: '49000',
+  });
+  console.log('Amended price:', amendResp.data.result.price);
+
+  // 6. Cancel the order
+  const cancelResp = await wsApiClient.cancelSpotOrder({
+    order_id: orderId,
+    currency_pair: 'BTC_USDT',
+  });
+  console.log('Order cancelled. finish_as:', cancelResp.data.result.finish_as);
+}
+
+main().catch(console.error);
+```
+
+**Futures example — place and cancel:**
+
+```typescript
+import { WebsocketAPIClient, WS_KEY_MAP } from 'gateio-api';
+
+const wsApiClient = new WebsocketAPIClient({
+  apiKey: 'YOUR_API_KEY',
+  apiSecret: 'YOUR_API_SECRET',
+});
+
+// Place a USDT-settled perpetual futures order (default wsKey)
+const futuresResp = await wsApiClient.submitNewFuturesOrder({
+  contract: 'BTC_USDT',
+  size: 1,          // number of contracts (positive = long, negative = short)
+  price: '50000',
+  tif: 'gtc',
+});
+
+const futuresOrder = futuresResp.data.result;
+console.log(`Futures order placed: ${futuresOrder.id}`);
+
+// Cancel it
+await wsApiClient.cancelFuturesOrder({
+  order_id: futuresOrder.id,
+  settle: 'usdt',
+});
+
+// Or, route to the BTC-settled connection explicitly
+const btcFuturesResp = await wsApiClient.submitNewFuturesOrder(
+  { contract: 'BTC_USD', size: 1, price: '50000', tif: 'gtc' },
+  WS_KEY_MAP.perpFuturesBTCV4,
+);
+```

@@ -1,0 +1,279 @@
+---
+title: "Margin & Cross Margin Trading with Gate.io SDK"
+sidebarTitle: "Margin Trading"
+description: "Access Gate.com margin and cross margin trading via the RestClient: manage borrowing, repayments, leveraged positions, and margin account balances."
+---
+
+Gate.com offers two main margin products: **isolated margin** (per-pair accounts with independent risk) and **cross margin** (a single collateral pool shared across all positions). The `RestClient` covers both, as well as the unified **Margin UNI** lending markets that power undercollateralized borrowing. All margin methods require authentication.
+
+## Isolated Margin Accounts
+
+### Account Balances
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// GET /margin/accounts — all isolated margin positions
+const marginAccounts = await client.getMarginAccounts();
+
+// Single currency pair
+const btcAccount = await client.getMarginAccounts({
+  currency_pair: 'BTC_USDT',
+});
+```
+
+### Balance History
+
+```typescript
+// GET /margin/account_book
+const history = await client.getMarginBalanceHistory({
+  currency_pair: 'BTC_USDT',
+  type: 'borrow',   // filter by transaction type
+  limit: 50,
+  from: Math.floor(Date.now() / 1000) - 86400 * 7, // past 7 days
+});
+```
+
+### Funding Accounts
+
+```typescript
+// GET /margin/funding_accounts — lender funding accounts
+const fundingAccounts = await client.getFundingAccounts();
+const usdtFunding = await client.getFundingAccounts({ currency: 'USDT' });
+```
+
+### Auto-Repayment Setting
+
+When auto-repayment is enabled, Gate.com automatically repays margin loans from your spot balance when a position is closed.
+
+```typescript
+// Enable auto-repayment
+// POST /margin/auto_repay
+await client.updateAutoRepaymentSetting({ status: 'on' });
+
+// Disable auto-repayment
+await client.updateAutoRepaymentSetting({ status: 'off' });
+
+// Check current setting
+// GET /margin/auto_repay
+const setting = await client.getAutoRepaymentSetting();
+console.log('Auto-repay:', setting.status); // 'on' | 'off'
+```
+
+## Cross Margin
+
+Cross margin uses a single account balance as collateral for all positions. This increases capital efficiency but also means a single liquidation can affect all open positions.
+
+### Supported Currencies
+
+```typescript
+// All currencies available for cross margin borrowing
+const currencies = await client.getCrossMarginCurrencies();
+
+// Details for a specific currency
+const usdtInfo = await client.getCrossMarginCurrency('USDT');
+```
+
+### Account Overview
+
+```typescript
+// GET /margin/cross/accounts — cross margin account balances and risk
+const crossAccount = await client.getCrossMarginAccount();
+console.log('Total equity:', crossAccount.total);
+console.log('Margin level:', crossAccount.margin_level);
+```
+
+### Account History
+
+```typescript
+// GET /margin/cross/account_book
+const crossHistory = await client.getCrossMarginAccountHistory({
+  currency: 'USDT',
+  type: 'borrow',
+  limit: 100,
+  from: Math.floor(Date.now() / 1000) - 86400 * 30, // past 30 days
+});
+```
+
+### Borrowing
+
+```typescript
+// Borrow USDT via cross margin
+// POST /margin/cross/loans
+const loan = await client.submitCrossMarginBorrowLoan({
+  currency: 'USDT',
+  amount: '500',
+  text: 'my-borrow-ref-001', // optional client reference
+});
+
+console.log('Loan ID:', loan.id);
+console.log('Borrowed:', loan.amount, loan.currency);
+```
+
+### Borrow History & Active Loans
+
+```typescript
+// GET /margin/cross/loans — status: 1=open, 2=closed
+const activeLoans = await client.getCrossMarginBorrowHistory({
+  status: 1,
+  currency: 'USDT',
+  limit: 20,
+});
+
+// Single loan by ID
+const loan = await client.getCrossMarginBorrowLoan('12345678');
+```
+
+### Repayment
+
+```typescript
+// POST /margin/cross/repayments
+const repayResult = await client.submitCrossMarginRepayment({
+  currency: 'USDT',
+  amount: '500',
+});
+
+// Repayment history
+const repayHistory = await client.getCrossMarginRepayments({
+  currency: 'USDT',
+  limit: 50,
+});
+```
+
+<Note>
+  If you repay more than the outstanding loan balance, Gate.com will cap the repayment at the actual amount owed and return the excess to your cross margin account.
+</Note>
+
+### Interest Records
+
+```typescript
+// GET /margin/cross/interest_records
+const interestRecords = await client.getCrossMarginInterestRecords({
+  currency: 'USDT',
+  page: 1,
+  limit: 100,
+});
+```
+
+### Borrowable Amount
+
+```typescript
+// Maximum you can borrow for a given currency
+// GET /margin/cross/borrowable
+const borrowable = await client.getCrossMarginBorrowableAmount({
+  currency: 'USDT',
+});
+console.log('Max borrowable:', borrowable.amount);
+```
+
+## Margin UNI (Lending Markets)
+
+Margin UNI is Gate.com's peer-to-pool lending market. You can borrow against specific currency pairs without the isolated margin requirement.
+
+### Listing Markets
+
+```typescript
+// GET /margin/uni/currency_pairs — all UNI lending markets
+const markets = await client.getLendingMarkets();
+
+// Single market detail
+const btcMarket = await client.getLendingMarket('BTC_USDT');
+```
+
+### Borrow or Repay
+
+```typescript
+// POST /margin/uni/loans
+// Borrow BTC against the BTC_USDT market
+await client.submitMarginUNIBorrowOrRepay({
+  currency: 'BTC',
+  type: 'borrow',
+  amount: '0.01',
+  currency_pair: 'BTC_USDT',
+});
+
+// Repay a specific amount
+await client.submitMarginUNIBorrowOrRepay({
+  currency: 'BTC',
+  type: 'repay',
+  amount: '0.01',
+  currency_pair: 'BTC_USDT',
+});
+
+// Repay entire outstanding balance
+await client.submitMarginUNIBorrowOrRepay({
+  currency: 'BTC',
+  type: 'repay',
+  amount: '0',          // amount is ignored when repaid_all is true
+  currency_pair: 'BTC_USDT',
+  repaid_all: true,
+});
+```
+
+### Active UNI Loans
+
+```typescript
+// GET /margin/uni/loans
+const uniLoans = await client.getMarginUNILoans({
+  currency_pair: 'BTC_USDT',
+  currency: 'BTC',
+  page: 1,
+  limit: 20,
+});
+```
+
+### Maximum Borrowable Amount
+
+```typescript
+// GET /margin/uni/borrowable
+const maxBorrow = await client.getMarginUNIMaxBorrow({
+  currency: 'BTC',
+  currency_pair: 'BTC_USDT',
+});
+console.log('Max borrowable:', maxBorrow.amount);
+```
+
+## Worked Example: Borrow → Trade → Repay
+
+The following shows a complete isolated cross-margin borrow-and-repay cycle:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+async function borrowTradeRepay() {
+  // 1. Check available borrowing capacity
+  const available = await client.getCrossMarginBorrowableAmount({
+    currency: 'USDT',
+  });
+  console.log('Can borrow up to:', available.amount, 'USDT');
+
+  // 2. Borrow 1000 USDT
+  const loan = await client.submitCrossMarginBorrowLoan({
+    currency: 'USDT',
+    amount: '1000',
+  });
+  console.log('Loan created:', loan.id);
+
+  // 3. (Place a trade with the borrowed funds — see spot-trading docs)
+
+  // 4. Repay the loan
+  await client.submitCrossMarginRepayment({
+    currency: 'USDT',
+    amount: '1000',
+  });
+  console.log('Loan repaid');
+}
+
+borrowTradeRepay().catch(console.error);
+```
+
+<Warning>
+  Margin trading amplifies both gains and losses. Monitor your margin level with `getCrossMarginAccount()` and ensure it stays well above the liquidation threshold for your account tier.
+</Warning>

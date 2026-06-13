@@ -1,0 +1,375 @@
+---
+title: "WebsocketClient Class Reference for Gate.io SDK"
+sidebarTitle: "WebsocketClient"
+description: "Complete reference for the Gate.io SDK WebsocketClient class — constructor, subscribe/unsubscribe methods, event emitter API, and WebSocket API integration."
+---
+
+The `WebsocketClient` class manages persistent WebSocket connections to Gate.io's market data and private account streams. It handles authentication, heartbeat ping/pong cycles, automatic reconnection with topic re-subscription, and routing of both public and private topic subscriptions to the correct underlying connection. It also exposes a `sendWSAPIRequest()` method for executing REST-like trading commands entirely over WebSocket.
+
+## Installation and Import
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+```
+
+## Constructor
+
+```typescript
+new WebsocketClient(options?: WSClientConfigurableOptions, logger?: DefaultLogger)
+```
+
+<ParamField path="options" type="WSClientConfigurableOptions" optional>
+  Configuration object for the WebSocket client. All fields are optional.
+
+  <ParamField path="apiKey" type="string" optional>
+    Your Gate.io API key. Required to subscribe to private topics or use the WS API.
+  </ParamField>
+
+  <ParamField path="apiSecret" type="string" optional>
+    Your Gate.io API secret. Required to subscribe to private topics or use the WS API.
+  </ParamField>
+
+  <ParamField path="useTestnet" type="boolean" optional>
+    Default: `false`. When `true`, connects to Gate.io's testnet WebSocket endpoints instead of production.
+  </ParamField>
+
+  <ParamField path="recvWindow" type="number" optional>
+    Milliseconds added to the current timestamp when generating a private WebSocket request signature. Effectively shifts the signature timestamp forward to account for clock skew. Default: `0`.
+  </ParamField>
+
+  <ParamField path="pingInterval" type="number" optional>
+    How often (in milliseconds) the SDK sends a ping frame to each active connection to keep it alive. The exact format of the ping varies per Gate.io market (e.g. `spot.ping`, `futures.ping`).
+  </ParamField>
+
+  <ParamField path="pongTimeout" type="number" optional>
+    How long (in milliseconds) to wait for a pong reply before considering the connection dead and triggering a reconnect.
+  </ParamField>
+
+  <ParamField path="reconnectTimeout" type="number" optional>
+    Delay in milliseconds before attempting to re-establish a dropped connection.
+  </ParamField>
+
+  <ParamField path="reauthWSAPIOnReconnect" type="boolean" optional>
+    Default: `true`. When `true`, the SDK automatically re-authenticates any WS API connection that was previously authenticated after a reconnect. Up to 5 retry attempts are made. Emit events `authenticated` (success) or `exception` (type: `wsapi.auth`, if all retries fail) signal the outcome. Set to `false` to manage re-authentication manually.
+  </ParamField>
+
+  <ParamField path="wsUrl" type="string" optional>
+    Override the WebSocket URL for all connections. Useful for proxying through a custom gateway.
+  </ParamField>
+
+  <ParamField path="wsOptions" type="object" optional>
+    Low-level options forwarded to the underlying `WebSocket` constructor. Accepts `protocols`, `agent`, and any fields from `WebSocket.ClientOptions` or `ClientRequestArgs`.
+  </ParamField>
+
+  <ParamField path="customSignMessageFn" type="(message: string, secret: string) => Promise<string>" optional>
+    Provide a custom HMAC signing function. Useful for leveraging Node.js's faster `createHmac` rather than the Web Crypto API. See the examples folder for a demonstration.
+  </ParamField>
+</ParamField>
+
+<ParamField path="logger" type="DefaultLogger" optional>
+  A custom logger instance. If omitted, the SDK uses its built-in logger which writes to the console.
+</ParamField>
+
+## WsKey Values
+
+Each Gate.io WebSocket product is identified by a `WsKey` string. Pass the correct key when calling `subscribe()`, `unsubscribe()`, or `sendWSAPIRequest()`:
+
+| WsKey | Market |
+|-------|--------|
+| `'spotV4'` | Spot (public + private) |
+| `'perpFuturesUSDTV4'` | USDT-settled perpetual futures |
+| `'perpFuturesBTCV4'` | BTC-settled perpetual futures |
+| `'deliveryFuturesUSDTV4'` | USDT-settled delivery futures |
+| `'deliveryFuturesBTCV4'` | BTC-settled delivery futures |
+| `'optionsV4'` | Options |
+| `'announcementsV4'` | System announcements |
+
+Import `WS_KEY_MAP` to access these values without hardcoding strings:
+
+```typescript
+import { WS_KEY_MAP } from 'gateio-api';
+
+wsClient.subscribe('spot.tickers', WS_KEY_MAP.spotV4);
+```
+
+## Public Methods
+
+### `connectAll()`
+
+```typescript
+connectAll(): Promise<WSConnectedResult | undefined>[]
+```
+
+Pre-emptively opens all standard connections (spot, perp futures, delivery futures, options, announcements) rather than waiting for the first `subscribe()` call to trigger lazy connection. Returns an array of promises that each resolve when the corresponding connection is ready.
+
+```typescript
+await Promise.all(wsClient.connectAll());
+```
+
+### `connectWSAPI(wsKey, skipAuth?)`
+
+```typescript
+connectWSAPI(wsKey: WSAPIWsKey, skipAuth?: boolean): Promise<unknown>
+```
+
+Ensures a specific WS API connection is active and authenticated. Calling this before your first WS API request warms up the connection so the first request does not pay the connection + auth setup cost.
+
+```typescript
+await wsClient.connectWSAPI('spotV4');
+```
+
+### `subscribe(topics, wsKey)`
+
+```typescript
+subscribe(
+  requests: (WsTopicRequest<string> | string) | (WsTopicRequest<string> | string)[],
+  wsKey: WsKey,
+): void
+```
+
+Subscribe to one or more topics. Pass either a single topic string, a single `WsTopicRequest` object, or an array of either. The SDK automatically:
+- Opens the connection if not already active
+- Authenticates if the topic is private and credentials are configured
+- Resubscribes automatically after any reconnection
+
+```typescript
+// Single public topic
+wsClient.subscribe('spot.tickers', 'spotV4');
+
+// Topic with parameters
+wsClient.subscribe(
+  { topic: 'spot.tickers', payload: ['BTC_USDT', 'ETH_USDT'] },
+  'spotV4',
+);
+
+// Multiple topics at once
+wsClient.subscribe(
+  [
+    { topic: 'spot.tickers', payload: ['BTC_USDT'] },
+    { topic: 'spot.order_book', payload: ['ETH_USDT', '5', '100ms'] },
+  ],
+  'spotV4',
+);
+
+// Private topic (requires apiKey + apiSecret in constructor)
+wsClient.subscribe('spot.orders', 'spotV4');
+```
+
+### `unsubscribe(topics, wsKey)`
+
+```typescript
+unsubscribe(
+  requests: (WsTopicRequest<string> | string) | (WsTopicRequest<string> | string)[],
+  wsKey: WsKey,
+): void
+```
+
+Unsubscribe from one or more topics. The topic is removed from the SDK's internal cache so it will not be resubscribed on reconnect.
+
+```typescript
+wsClient.unsubscribe('spot.tickers', 'spotV4');
+
+wsClient.unsubscribe(
+  { topic: 'spot.tickers', payload: ['BTC_USDT'] },
+  'spotV4',
+);
+```
+
+### `sendWSAPIRequest(wsKey, channel, params?, requestFlags?)`
+
+```typescript
+async sendWSAPIRequest<TWSKey, TWSChannel, TWSParams, TWSAPIResponse>(
+  wsKey: TWSKey,
+  channel: TWSChannel,
+  params?: TWSParams,
+  requestFlags?: WSAPIRequestFlags,
+): Promise<TWSAPIResponse>
+```
+
+Send a WS API command over an existing (or newly opened) connection. Returns a `Promise` that resolves with the server's reply or rejects if an error response is received or the connection drops before the reply arrives.
+
+The SDK automatically:
+1. Ensures the connection is open (`assertIsConnected`)
+2. Ensures the connection is authenticated (`assertIsAuthenticated`) unless `requestFlags.authIsOptional` is `true`
+3. Signs the request payload with your API secret
+4. Stores a deferred promise keyed to the request ID and resolves it when the matching reply arrives
+
+```typescript
+const response = await wsClient.sendWSAPIRequest(
+  'spotV4',
+  'spot.order_place',
+  {
+    currency_pair: 'BTC_USDT',
+    side: 'buy',
+    type: 'limit',
+    amount: '0.001',
+    price: '50000',
+  },
+);
+
+console.log(response.data.result);
+```
+
+## Event Emitter Interface
+
+`WebsocketClient` extends Node.js's `EventEmitter`. Listen for events using the standard `.on()` method.
+
+### `update`
+
+Emitted for every market data push or private account data push received from the server. This is the primary event for consuming real-time data.
+
+```typescript
+wsClient.on('update', (data) => {
+  console.log('Market data update:', data.channel, data.result);
+});
+```
+
+### `open`
+
+Emitted when a WebSocket connection is successfully established.
+
+```typescript
+wsClient.on('open', ({ wsKey, event }) => {
+  console.log(`Connection opened: ${wsKey}`);
+});
+```
+
+### `close`
+
+Emitted when a connection is closed.
+
+```typescript
+wsClient.on('close', ({ wsKey, event }) => {
+  console.log(`Connection closed: ${wsKey}`);
+});
+```
+
+### `response`
+
+Emitted when the server sends a reply to a subscription or unsubscription request. Also emitted for successful WS API command responses.
+
+```typescript
+wsClient.on('response', (data) => {
+  console.log('Server response:', data);
+});
+```
+
+### `authenticated`
+
+Emitted when a private WebSocket connection (or WS API connection) has been successfully authenticated.
+
+```typescript
+wsClient.on('authenticated', (data) => {
+  console.log(`Authenticated on ${data.wsKey}`);
+});
+```
+
+### `exception`
+
+Emitted when the SDK encounters an internal error, such as a failed WS API request (non-200 status), a failed re-authentication attempt, or a message parsing error.
+
+```typescript
+wsClient.on('exception', (data) => {
+  console.error('SDK exception:', data);
+});
+```
+
+### `error`
+
+Emitted for raw WebSocket-level errors from the underlying `ws` library.
+
+```typescript
+wsClient.on('error', (data) => {
+  console.error('WebSocket error:', data);
+});
+```
+
+### `reconnected`
+
+Emitted after a dropped connection has been successfully re-established and all previous topic subscriptions have been replayed.
+
+```typescript
+wsClient.on('reconnected', (data) => {
+  console.log(`Reconnected: ${data.wsKey}`);
+});
+```
+
+## Complete Example
+
+The following example shows a full setup: subscribing to public ticker data, listening to private order updates, and placing a spot order over the WS API.
+
+```typescript
+import { WebsocketClient, WS_KEY_MAP } from 'gateio-api';
+
+const wsClient = new WebsocketClient({
+  apiKey: 'YOUR_API_KEY',
+  apiSecret: 'YOUR_API_SECRET',
+});
+
+// --- Event listeners ---
+
+wsClient.on('open', ({ wsKey }) => {
+  console.log(`Connected: ${wsKey}`);
+});
+
+wsClient.on('update', (data) => {
+  // All market data and private account pushes arrive here
+  if (data.channel === 'spot.tickers') {
+    console.log('Ticker update:', data.result);
+  }
+  if (data.channel === 'spot.orders') {
+    console.log('Order update:', data.result);
+  }
+});
+
+wsClient.on('response', (data) => {
+  // Subscription confirmations and WS API replies
+  console.log('Response:', data.channel, data.event);
+});
+
+wsClient.on('authenticated', ({ wsKey }) => {
+  console.log(`Authenticated on ${wsKey}`);
+});
+
+wsClient.on('exception', (data) => {
+  console.error('Exception:', JSON.stringify(data));
+});
+
+wsClient.on('reconnected', ({ wsKey }) => {
+  console.log(`Reconnected: ${wsKey}`);
+});
+
+// --- Subscriptions ---
+
+// Public ticker stream
+wsClient.subscribe(
+  { topic: 'spot.tickers', payload: ['BTC_USDT', 'ETH_USDT'] },
+  WS_KEY_MAP.spotV4,
+);
+
+// Private order updates (auto-authenticated)
+wsClient.subscribe('spot.orders', WS_KEY_MAP.spotV4);
+
+// --- WS API: place an order ---
+
+async function placeOrder() {
+  try {
+    const response = await wsClient.sendWSAPIRequest(
+      WS_KEY_MAP.spotV4,
+      'spot.order_place',
+      {
+        currency_pair: 'BTC_USDT',
+        side: 'buy',
+        type: 'limit',
+        amount: '0.001',
+        price: '50000',
+      },
+    );
+    console.log('Order placed:', response.data.result);
+  } catch (err) {
+    console.error('Order failed:', err);
+  }
+}
+
+placeOrder();
+```

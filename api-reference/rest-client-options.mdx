@@ -1,0 +1,123 @@
+---
+title: "RestClientOptions: Configuration Reference for Gate.io SDK"
+sidebarTitle: "RestClientOptions"
+description: "Full reference for all RestClientOptions fields accepted by the Gate.io SDK RestClient constructor — API keys, base URL, timeouts, proxy, and validation settings."
+---
+
+The `RestClientOptions` interface controls how the `RestClient` connects to Gate.io's REST API. You pass a plain object that satisfies this interface as the first argument to the `RestClient` constructor. Every field is optional — the client works out of the box without any configuration for public endpoints, and only requires `apiKey` and `apiSecret` for authenticated calls.
+
+<Tip>
+  Store your API credentials in environment variables (e.g. `GATE_API_KEY` and `GATE_API_SECRET`) rather than hard-coding them in source files. Read them at runtime with `process.env.GATE_API_KEY` to keep secrets out of version control.
+</Tip>
+
+## Fields
+
+<ParamField path="apiKey" type="string" optional>
+  Your Gate.io API key. Required for any signed (private) REST endpoint. Pair this with `apiSecret`.
+</ParamField>
+
+<ParamField path="apiSecret" type="string" optional>
+  Your Gate.io API secret. Used together with `apiKey` to generate the HMAC-SHA512 request signature for authenticated endpoints.
+</ParamField>
+
+<ParamField path="recvWindow" type="number" optional>
+  Maximum request window in milliseconds for signed API calls. If an individual request does not specify its own `recvWindow`, this value is used as the default. When the server receives the request outside this window it rejects it with a timestamp error.
+</ParamField>
+
+<ParamField path="strictParamValidation" type="boolean" default="false">
+  When `true`, the client throws an error immediately if any request parameter resolves to `undefined` before the request is serialised and signed. Useful during development to catch typos or missing required fields early.
+</ParamField>
+
+<ParamField path="baseUrl" type="string" optional>
+  Fully override the API protocol and domain, e.g. `'https://api.gate.io'`. Takes precedence over `baseUrlKey`. Use this when you need to point to a custom proxy or mirror.
+</ParamField>
+
+<ParamField path="baseUrlKey" type="GateBaseUrlKey" optional>
+  Select a named base URL alias that is built into the library instead of constructing a full URL yourself. The available values are:
+
+  | Key | URL |
+  |-----|-----|
+  | `live` | `https://api.gateio.ws/api/v4` (default) |
+  | `futuresLiveAlternative` | `https://fx-api.gateio.ws/api/v4` |
+  | `futuresTestnet` | `https://fx-api-testnet.gateio.ws/api/v4` |
+
+  Ignored if `baseUrl` is also set.
+</ParamField>
+
+<ParamField path="parseExceptions" type="boolean" default="true">
+  When `true` (the default), the client post-processes failed requests and throws a structured exception containing the HTTP status, Gate.io error label, and message. Set to `false` to receive raw axios error objects instead.
+</ParamField>
+
+<ParamField path="keepAlive" type="boolean" optional>
+  Enable HTTP keep-alive for REST requests via the underlying axios HTTP agent. Reusing TCP connections can reduce latency on workloads that make many sequential requests.
+</ParamField>
+
+<ParamField path="keepAliveMsecs" type="number" default="1000">
+  When `keepAlive` is `true`, this controls how often (in milliseconds) TCP keep-alive packets are sent over idle sockets. Only relevant when `keepAlive` is enabled. Defaults to `1000` ms as provided by Node.js's built-in HTTPS agent.
+</ParamField>
+
+<ParamField path="customSignMessageFn" type="(message: string, secret: string) => Promise<string>" optional>
+  Provide a custom HMAC-SHA512 signing function. The SDK's built-in implementation uses the Web Crypto API for broad compatibility, but Node.js's native `crypto.createHmac` is significantly faster. Swap it in when throughput matters. See the example below.
+</ParamField>
+
+## Full Configuration Example
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+
+  // Allow an extra 5 seconds of clock skew tolerance
+  recvWindow: 5000,
+
+  // Throw immediately on undefined params (recommended for development)
+  strictParamValidation: true,
+
+  // Route futures requests through the dedicated futures endpoint
+  baseUrlKey: 'futuresLiveAlternative',
+
+  // Keep TCP connections alive for lower latency on repeated calls
+  keepAlive: true,
+  keepAliveMsecs: 3000,
+});
+```
+
+## Using `customSignMessageFn` with Node.js `crypto`
+
+The Web Crypto API is portable across runtimes, but Node.js's built-in `crypto` module is measurably faster for high-frequency signing. Pass a custom function to opt in:
+
+```typescript
+import { createHmac } from 'crypto';
+import { RestClient } from 'gateio-api';
+
+async function signWithNodeCrypto(
+  message: string,
+  secret: string,
+): Promise<string> {
+  return createHmac('sha512', secret).update(message).digest('hex');
+}
+
+const client = new RestClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+  customSignMessageFn: signWithNodeCrypto,
+});
+```
+
+The function must return a `Promise<string>` containing the lowercase hex-encoded HMAC-SHA512 digest of `message` signed with `secret`.
+
+## Using the Futures Testnet
+
+To run your integration tests against Gate.io's futures testnet without touching live funds, set `baseUrlKey` to `'futuresTestnet'`:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const testClient = new RestClient({
+  apiKey: process.env.GATE_TESTNET_API_KEY,
+  apiSecret: process.env.GATE_TESTNET_API_SECRET,
+  baseUrlKey: 'futuresTestnet',
+});
+```

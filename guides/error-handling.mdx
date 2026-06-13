@@ -1,0 +1,295 @@
+---
+title: "Error Handling in the Gate.io API SDK"
+sidebarTitle: "Error Handling"
+description: "Understand how the Gate.io SDK surfaces REST and WebSocket errors, how to catch and inspect them, and patterns for building resilient trading applications."
+---
+
+Every request made through the `gateio-api` SDK is promise-based, which means errors propagate through standard JavaScript rejection paths. Understanding the shape of those errors — and the SDK options that control how they are processed — is essential before deploying any trading automation to production.
+
+## How REST Errors Surface
+
+The SDK uses [axios](https://axios-http.com/) under the hood for all HTTP requests. When a request fails — whether due to a network problem, an HTTP status outside the 2xx range, or an application-level rejection returned by the Gate.com API — the SDK intercepts the raw axios error inside `BaseRestClient.parseException` and re-throws a structured object.
+
+The re-thrown error has the following shape:
+
+```typescript
+{
+  code: number;          // HTTP status code (e.g. 400, 401, 429)
+  message: string;       // HTTP status text (e.g. "Bad Request")
+  body: {
+    label: string;       // Gate.com error label (e.g. "INVALID_PARAM_VALUE")
+    message: string;     // Human-readable description from Gate.com
+  };
+  headers: object;       // Response headers
+  requestOptions: object; // Sanitised copy of the request config (credentials omitted)
+}
+```
+
+<Note>
+  API credentials (`apiKey`, `apiSecret`) are automatically stripped from the `requestOptions` field of every thrown error object so they never appear in logs or error reporting tools.
+</Note>
+
+### Accessing the Gate.com Error Body
+
+Gate.com includes a machine-readable `label` and a human-readable `message` in every error response. After the SDK processes the exception, both values live under the `body` property of the thrown object:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
+
+try {
+  const order = await client.submitSpotOrder({
+    currency_pair: 'BTC_USDT',
+    type: 'limit',
+    account: 'spot',
+    side: 'buy',
+    amount: '0.001',
+    price: '1',
+  });
+} catch (e: any) {
+  // e.body is set when the server responded with an error
+  if (e.body) {
+    console.error('Gate.com API error label:', e.body.label);
+    console.error('Gate.com API error message:', e.body.message);
+    console.error('HTTP status:', e.code);
+  } else {
+    // No response received — network issue, DNS failure, timeout, etc.
+    console.error('Network or SDK error:', e.message ?? e);
+  }
+}
+```
+
+---
+
+## Controlling Error Processing with `parseExceptions`
+
+The `parseExceptions` option (default: `true`) controls whether the SDK post-processes raw axios errors into the structured format described above.
+
+| Value | Behaviour |
+|-------|-----------|
+| `true` (default) | Axios errors are caught and re-thrown as structured objects with `code`, `message`, `body`, and `headers`. |
+| `false` | Raw axios errors bubble up unmodified. You receive an `AxiosError` instance with `error.response?.data` containing the Gate.com body. |
+
+```typescript
+// Opt out of SDK error processing — receive raw AxiosError instances
+const client = new RestClient({
+  apiKey: 'KEY',
+  apiSecret: 'SECRET',
+  parseExceptions: false,
+});
+
+try {
+  await client.getSpotOrders({ currency_pair: 'BTC_USDT', status: 'open' });
+} catch (e: any) {
+  // With parseExceptions: false, error.response is the raw AxiosResponse
+  if (e.response?.data) {
+    console.error('Raw Gate.com body:', e.response.data.label, e.response.data.message);
+  }
+}
+```
+
+---
+
+## Catching Undefined Parameters with `strictParamValidation`
+
+Setting `strictParamValidation: true` causes the SDK to throw a synchronous error before the HTTP request is even dispatched if any parameter value is `undefined`. This is useful during development to catch typos and missing fields early.
+
+```typescript
+const client = new RestClient({
+  apiKey: 'KEY',
+  apiSecret: 'SECRET',
+  strictParamValidation: true, // throws if any param value is undefined
+});
+```
+
+The error message in that case is:
+
+```
+Failed to sign API request due to undefined parameter
+```
+
+---
+
+## Async/Await vs. Promise Chain Patterns
+
+Both patterns work equally well. Choose the one that fits your codebase style.
+
+<Tabs>
+  <Tab title="async/await + try/catch">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+
+    const client = new RestClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
+
+    async function placeOrder() {
+      try {
+        const result = await client.submitSpotOrder({
+          currency_pair: 'ETH_USDT',
+          type: 'limit',
+          account: 'spot',
+          side: 'buy',
+          amount: '0.1',
+          price: '2000',
+        });
+        console.log('Order placed:', result);
+      } catch (e: any) {
+        if (e.body) {
+          // Structured SDK error
+          console.error(`[${e.code}] ${e.body.label}: ${e.body.message}`);
+        } else {
+          // Network failure, timeout, or misconfiguration
+          console.error('Unexpected error:', e);
+        }
+      }
+    }
+    ```
+  </Tab>
+  <Tab title=".catch() chain">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+
+    const client = new RestClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
+
+    client
+      .submitSpotOrder({
+        currency_pair: 'ETH_USDT',
+        type: 'limit',
+        account: 'spot',
+        side: 'buy',
+        amount: '0.1',
+        price: '2000',
+      })
+      .then((result) => {
+        console.log('Order placed:', result);
+      })
+      .catch((e: any) => {
+        if (e.body) {
+          console.error(`[${e.code}] ${e.body.label}: ${e.body.message}`);
+        } else {
+          console.error('Unexpected error:', e);
+        }
+      });
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Never swallow errors silently with an empty `.catch(() => {})` or a bare `catch {}` block. Silent failures in trading code can lead to untracked positions, duplicate orders, or missed cancellations that are difficult to diagnose.
+</Warning>
+
+---
+
+## WebSocket Error Events
+
+The `WebsocketClient` extends Node.js `EventEmitter` and exposes two distinct error-related events:
+
+| Event | When it fires |
+|-------|---------------|
+| `error` | A raw WebSocket transport error occurred (e.g. connection refused, TLS failure). |
+| `exception` | The SDK encountered an internal error while processing a message, or your own event listener threw an exception. |
+
+```typescript
+import { WebsocketClient } from 'gateio-api';
+
+const ws = new WebsocketClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
+
+// Transport-level errors
+ws.on('error', (err) => {
+  console.error('WebSocket transport error:', err);
+});
+
+// SDK-level exceptions (includes exceptions thrown inside your own handlers)
+ws.on('exception', (err) => {
+  console.error('WebSocket SDK exception:', err);
+});
+
+// Subscribe to a topic
+ws.subscribeTopic('spotV4', 'spot.tickers', ['BTC_USDT']);
+```
+
+<Note>
+  The `exception` event also fires when an uncaught error is thrown inside any of your own `update`, `response`, or `authenticated` event handlers. This helps centralise error logging without silently dropping events.
+</Note>
+
+---
+
+## Common Error Scenarios
+
+<AccordionGroup>
+  <Accordion title="INVALID_PARAM_VALUE — bad parameter">
+    Gate.com returns this label when a request parameter does not match the expected format or range. Double-check the currency pair format (`BTC_USDT`, not `BTCUSDT`), order side (`buy`/`sell`), and numeric precision requirements in the [Gate.com API docs](https://www.gate.com/docs/developers/apiv4/en/).
+  </Accordion>
+  <Accordion title="INVALID_KEY — authentication failure">
+    Returned when the `apiKey` does not exist, has been revoked, or the request signature is invalid. Verify your key is active in the [Gate.com API Key Management](https://www.gate.com/myaccount/api_key_manage) console. Also check that your system clock is accurate — Gate.com uses timestamp-based HMAC signing and will reject requests where the timestamp is too far from server time.
+  </Accordion>
+  <Accordion title="RATELIMIT — too many requests">
+    You have exceeded Gate.com's rate limit for the endpoint. Implement an exponential back-off strategy and consult the [Gate.com rate limit documentation](https://www.gate.com/docs/developers/apiv4/en/) for per-endpoint limits. The HTTP `code` in the SDK error will be `429`.
+  </Accordion>
+  <Accordion title="Network timeout (no e.body)">
+    If `e.body` is `undefined` and `e.code` is also `undefined`, the error occurred before the server responded — typically a DNS failure, TCP timeout, or proxy misconfiguration. Inspect `e.message` for details. Consider enabling `keepAlive: true` in `RestClientOptions` for high-frequency workloads to reduce connection overhead.
+  </Accordion>
+  <Accordion title="Missing API keys at construction time">
+    If you provide only one of `apiKey` or `apiSecret` (but not both), the `RestClient` constructor throws synchronously:
+
+    ```
+    API Key, Secret & Application ID are ALL required to use the authenticated REST client
+    ```
+
+    Either provide both credentials or omit both (for unauthenticated public endpoints only).
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Well-Structured Error Handler with Type Narrowing
+
+The following utility function demonstrates a production-ready pattern for handling SDK errors with proper type narrowing:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+interface GateSdkError {
+  code: number;
+  message: string;
+  body: { label: string; message: string };
+  headers: Record<string, string>;
+}
+
+function isGateSdkError(e: unknown): e is GateSdkError {
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    'code' in e &&
+    'body' in e &&
+    typeof (e as any).body?.label === 'string'
+  );
+}
+
+async function safeRequest<T>(fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (e: unknown) {
+    if (isGateSdkError(e)) {
+      console.error(
+        `Gate.com API error [HTTP ${e.code}] ${e.body.label}: ${e.body.message}`
+      );
+      // Handle specific labels
+      if (e.body.label === 'RATELIMIT') {
+        console.warn('Rate limited — back off and retry.');
+      }
+    } else if (e instanceof Error) {
+      console.error('SDK or network error:', e.message);
+    } else {
+      console.error('Unknown error:', e);
+    }
+    return null;
+  }
+}
+
+// Usage
+const client = new RestClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
+const tickers = await safeRequest(() => client.getSpotTicker());
+```
+
+For a full list of Gate.com API error labels and their meanings, refer to the official [Gate.com API documentation](https://www.gate.com/docs/developers/apiv4/en/).

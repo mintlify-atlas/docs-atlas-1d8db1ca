@@ -1,0 +1,75 @@
+---
+title: "Gate.io API SDK: Node.js & TypeScript for Gate.com"
+sidebarTitle: "Introduction"
+description: "Learn what the Gate.io API SDK is, which Gate.com markets it covers, and how it compares to using the raw REST or WebSocket APIs directly."
+---
+
+The `gateio-api` package is a production-grade, fully-typed Node.js and TypeScript SDK for the Gate.com (Gate.io) platform. Rather than crafting raw HTTP requests, managing HMAC signatures by hand, or writing your own WebSocket reconnection logic, you drop in one npm package and get a battle-tested client that handles all of that for you — letting you focus on your trading logic instead of infrastructure plumbing. The SDK is actively maintained, ships with complete TypeScript declarations for most API requests and responses, and sees extensive use in live production trading environments.
+
+## What the SDK Provides
+
+The package exports three primary client classes, each designed for a distinct communication pattern with Gate.com:
+
+### `RestClient`
+
+The `RestClient` is a unified HTTP client that covers every Gate.com trading product through a single object. There is no need to instantiate separate clients for spot versus futures — one `RestClient` instance exposes methods for all markets. Authentication (HMAC-SHA512 signing) is handled automatically for any private endpoint; public endpoints need no credentials at all.
+
+### `WebsocketClient`
+
+The `WebsocketClient` manages persistent WebSocket connections for real-time data streams. It handles connection lifecycle automatically: opening connections on demand, sending periodic heartbeats to detect silent disconnections (including the scheduled 24-hour server-side disconnect), and resubscribing to all channels after a reconnect. Data arrives through a familiar Node.js `EventEmitter` interface — listen on the `update` event to receive market and account data.
+
+### `WebsocketAPIClient`
+
+The `WebsocketAPIClient` wraps the WebSocket API in a promise-driven, REST-like interface. Instead of managing `sendWSAPIRequest` calls and matching async replies via event listeners, you `await` each call just as you would with a REST endpoint. The client automatically establishes, authenticates, and health-checks the underlying WebSocket connection on your behalf.
+
+## Supported Markets & Products
+
+`gateio-api` provides full API coverage across all Gate.com trading products:
+
+| Market | Description |
+|---|---|
+| **Spot** | Buy and sell cryptocurrencies at current market prices |
+| **Margin** | Spot trading with borrowed funds and leverage |
+| **Perpetual Futures** | Perpetual swap contracts with no expiry |
+| **Delivery Futures** | Fixed-expiry futures contracts |
+| **Options** | Vanilla options on crypto assets |
+| **CrossEx** | Cross-exchange trading across multiple platforms |
+| **Alpha** | Meme token and new listing trading |
+| **OTC** | Fiat and stablecoin over-the-counter trading |
+
+Both the REST and WebSocket clients cover all of these markets through their respective unified interfaces.
+
+## Key Design Choices
+
+**Unified client.** A single `RestClient` instance gives you every endpoint across every Gate.com market. There is no need to manage multiple client objects or keep track of which client covers which product.
+
+**Complete TypeScript types.** Strongly typed request parameters and response objects ship with the package. Your IDE will surface the exact fields each method accepts, and TypeScript will catch mismatched types at compile time before they become runtime errors.
+
+**Automatic authentication.** Pass your `apiKey` and `apiSecret` when constructing any client. The SDK signs every private request with HMAC-SHA512 automatically — you never call a sign function yourself. For WebSocket connections, authentication is similarly transparent.
+
+**Smart WebSocket reconnection.** The `WebsocketClient` monitors connection health through configurable ping/pong heartbeats. When a connection drops — whether due to a network blip or Gate.com's scheduled 24-hour disconnect — the client reconnects and resubscribes to every active channel without any code on your part. A `reconnected` event fires when connectivity is restored so you can take any additional action.
+
+**Promise-driven interface.** All REST methods return native Promises. Use `async/await` or `.then()/.catch()` chains — whichever fits your codebase. The `WebsocketAPIClient` brings the same promise-driven pattern to the WebSocket API.
+
+**Proxy support.** HTTP requests are made via `axios`, so standard axios proxy configuration works out of the box for environments that require it.
+
+## Explore the SDK
+
+<CardGroup cols={2}>
+  <Card icon="rocket" title="Quickstart" href="/quickstart">
+    Install the package and make your first live API call in under five minutes.
+  </Card>
+  <Card icon="key" title="Authentication" href="/authentication">
+    Generate API credentials and learn how the SDK signs your requests.
+  </Card>
+  <Card icon="code" title="REST Client" href="https://www.gate.com/docs/developers/apiv4/en/">
+    Browse the full Gate.com REST API reference for all available endpoints.
+  </Card>
+  <Card icon="bolt" title="WebSocket Streams" href="https://www.gate.com/docs/developers/apiv4/en/#websocket-api">
+    Real-time market data and account event streams via WebSocket.
+  </Card>
+</CardGroup>
+
+<Note>
+  Join the [Node.js Algo Traders](https://t.me/nodetraders) community on Telegram to collaborate with other developers building on this SDK, get support, and share strategies. It's the fastest way to get help when you're stuck.
+</Note>

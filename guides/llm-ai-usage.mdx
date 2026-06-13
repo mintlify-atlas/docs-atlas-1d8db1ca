@@ -1,0 +1,155 @@
+---
+title: "Using the Gate.io SDK with LLMs and AI Coding Tools"
+sidebarTitle: "LLM & AI Usage"
+description: "The Gate.io SDK ships an llms.txt file with AI-optimized documentation. Feed it to your LLM or AI coding assistant for accurate method signatures and examples."
+---
+
+Writing trading code with AI assistance is increasingly common, but large language models often hallucinate method names, invent parameter shapes, or produce outdated patterns when working with specialised libraries. The `gateio-api` SDK ships a dedicated `llms.txt` file designed to give any LLM or AI coding assistant the exact context it needs to produce accurate, working code on the first attempt.
+
+## What Is `llms.txt`?
+
+`llms.txt` is a single machine-optimised text file that packages the most important parts of the `gateio-api` repository into a compact, structured format. It is generated using [Repomix](https://repomix.com/) and contains:
+
+- The full directory structure of the SDK
+- All TypeScript source files for REST and WebSocket clients
+- Complete function signatures, parameter types, and JSDoc comments
+- Request and response type definitions for every Gate.com API endpoint
+- Working examples from the `examples/` directory
+
+The file is intentionally structured for machine consumption — not for humans reading sequentially — which means it avoids prose filler and presents code and type information as densely as possible.
+
+The first lines of `llms.txt` describe its format and purpose:
+
+```
+This file is a merged representation of a subset of the codebase, containing
+files not matching ignore patterns, combined into a single document by Repomix.
+The content has been processed where content has been compressed (code blocks
+are separated by ⋮---- delimiter).
+...
+Purpose:
+--------
+This file contains a packed representation of a subset of the repository's
+contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+```
+
+---
+
+## Where to Find `llms.txt`
+
+The file is bundled with every published version of the package and is available in two places:
+
+| Location | How to access |
+|----------|--------------|
+| npm package | `node_modules/gateio-api/llms.txt` after `npm install gateio-api` |
+| GitHub repository | [github.com/tiagosiebler/gateio-api/blob/master/llms.txt](https://github.com/tiagosiebler/gateio-api/blob/master/llms.txt) |
+
+The `package.json` `files` field explicitly includes `llms.txt` so it is always present in the installed package:
+
+```json
+"files": [
+  "dist/*",
+  "llms.txt"
+]
+```
+
+---
+
+## Why Use It?
+
+Without `llms.txt` in context, an LLM generating Gate.com trading code typically:
+
+- Invents method names that do not exist (`client.createOrder()` instead of `client.submitSpotOrder()`)
+- Gets parameter shapes wrong (wrong field names, missing required fields)
+- Confuses Gate.com's WebSocket subscription model with other exchanges
+- Generates authentication code that does not match Gate.com's HMAC-SHA512 signing scheme
+
+With `llms.txt` loaded into context, the same model can produce accurate, ready-to-run code using the real SDK signatures.
+
+<Tip>
+  When asking an AI coding assistant to help write Gate.com trading code, always include `llms.txt` in the context window first. This single step dramatically reduces hallucinations and ensures the generated code uses the correct method names, parameter shapes, and patterns from the actual SDK.
+</Tip>
+
+---
+
+## How to Use `llms.txt` with an AI Coding Assistant
+
+<Steps>
+  <Step title="Get the llms.txt file">
+    After installing the package, the file is available locally:
+
+    ```bash
+    npm install gateio-api
+
+    # The file is now at:
+    cat node_modules/gateio-api/llms.txt
+    ```
+
+    Or download it directly from the GitHub repository.
+  </Step>
+  <Step title="Load it into your AI tool's context">
+    How you load the file depends on which tool you are using:
+
+    **Cursor IDE** — Add the file as a "Doc" or drag it into a Composer chat window. You can also reference it with `@llms.txt` if it is in your workspace.
+
+    **GitHub Copilot** — Open the file in the editor before asking Copilot to generate code. The open file is automatically included in the model's context.
+
+    **Claude / ChatGPT / other chat interfaces** — Paste the file contents directly into the conversation, or attach it as a file upload if the interface supports it.
+
+    **Continue.dev** — Add `llms.txt` as a context provider in your `.continue/config.json`.
+  </Step>
+  <Step title="Ask your question with the context loaded">
+    With `llms.txt` in context, you can ask natural-language questions and receive accurate SDK code:
+
+    ```
+    Using the gateio-api SDK (context provided in llms.txt), write a function
+    that subscribes to the BTC_USDT spot order book WebSocket stream and logs
+    each update.
+    ```
+
+    ```
+    Using the gateio-api SDK, show me how to place a limit order on the
+    perpetual futures market for BTC_USDT with a stop-loss, using the
+    correct parameter names.
+    ```
+  </Step>
+  <Step title="Verify the generated code">
+    Always review AI-generated trading code before running it with real funds. Even with `llms.txt` in context, verify that:
+    - Parameter names match the TypeScript type definitions in the SDK
+    - Order sizes and prices match Gate.com's precision requirements for your instrument
+    - Error handling is in place (see the [Error Handling guide](/guides/error-handling))
+  </Step>
+</Steps>
+
+---
+
+## What the File Contains
+
+`llms.txt` covers over 16,000 lines of compressed source context, including:
+
+- **`src/RestClient.ts`** — All REST API methods across spot, futures, delivery, options, margin, CrossEx, Alpha, and OTC markets
+- **`src/WebsocketClient.ts`** — All WebSocket subscription topics and WebSocket API methods
+- **`src/WebsocketAPIClient.ts`** — The promise-based WebSocket API client
+- **`src/types/request/`** — TypeScript interfaces for every REST request parameter
+- **`src/types/response/`** — TypeScript interfaces for every REST response body
+- **`src/types/websockets/`** — WebSocket event and request types
+- **`examples/`** — Working code examples for REST and WebSocket usage
+
+The format uses `⋮----` delimiters between compressed code sections, which helps LLMs with limited context windows process the file efficiently without token-wasting blank lines.
+
+---
+
+## Benefits at a Glance
+
+| Without `llms.txt` | With `llms.txt` |
+|-------------------|-----------------|
+| Hallucinated method names | Real method names from the source |
+| Wrong parameter field names | Exact TypeScript interface fields |
+| Generic authentication boilerplate | SDK-specific HMAC-SHA512 signing |
+| Outdated WebSocket patterns | Current subscription model |
+| Requires multiple correction rounds | Accurate code on the first attempt |
+
+<Note>
+  The `llms.txt` file is regenerated with each SDK release to reflect the latest method additions and type changes. If you cached a copy from an older version of the package, update it when you upgrade `gateio-api`.
+</Note>

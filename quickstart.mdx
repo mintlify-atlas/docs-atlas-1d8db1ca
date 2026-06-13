@@ -1,47 +1,307 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with the Gate.io API SDK in Minutes"
+sidebarTitle: "Quickstart"
+description: "Install gateio-api, create your first RestClient, and make a live spot market call. Includes working TypeScript and JavaScript examples."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+Getting up and running with `gateio-api` takes just a few minutes. You'll install the package, create API credentials on Gate.com, instantiate a client, and make your first live API call. This guide walks through each step and includes ready-to-run code for both TypeScript and JavaScript environments.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+### Install the package
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+Add `gateio-api` to your project using your preferred package manager.
 
-    ```bash
-    your-cli start
+<CodeGroup>
+```bash npm
+npm install gateio-api
+```
+
+```bash yarn
+yarn add gateio-api
+```
+
+```bash pnpm
+pnpm add gateio-api
+```
+</CodeGroup>
+
+The package ships with built-in TypeScript declarations — no separate `@types/` package is needed.
+
+### Create your API credentials
+
+Log in to your Gate.com account and navigate to the [API Key Management](https://www.gate.com/myaccount/api_key_manage) page. Create a new API key and note both the **API Key** and **API Secret**. You'll also need to configure the appropriate permissions (read, trade, etc.) depending on what your application needs to do.
+
+<Warning>
+  Never commit your API key or secret to source control. Use environment variables or a secrets manager to keep credentials out of your codebase. Anyone who obtains your secret can trade on your behalf and withdraw funds if withdrawal permissions are enabled.
+</Warning>
+
+### Create a client instance
+
+Instantiate a `RestClient` with your credentials. Both TypeScript (ES module imports) and CommonJS (`require`) are supported.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+
+    const client = new RestClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
     ```
-  </Step>
-</Steps>
+  </Tab>
+  <Tab title="JavaScript (CommonJS)">
+    ```javascript
+    const { RestClient } = require('gateio-api');
+
+    const client = new RestClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
+    ```
+  </Tab>
+</Tabs>
+
+For public endpoints (market data that requires no authentication), you can omit the credentials entirely:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+```
+
+### Fetch spot tickers
+
+Call `getSpotTicker()` with no arguments to retrieve all available spot trading pairs. This is a public endpoint and does not require API credentials.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+
+    const client = new RestClient();
+
+    async function main() {
+      try {
+        const tickers = await client.getSpotTicker();
+        console.log('All spot tickers:', tickers);
+      } catch (e) {
+        console.error('Error fetching tickers:', e);
+      }
+    }
+
+    main();
+    ```
+  </Tab>
+  <Tab title="JavaScript (CommonJS)">
+    ```javascript
+    const { RestClient } = require('gateio-api');
+
+    const client = new RestClient();
+
+    async function main() {
+      try {
+        const tickers = await client.getSpotTicker();
+        console.log('All spot tickers:', tickers);
+      } catch (e) {
+        console.error('Error fetching tickers:', e);
+      }
+    }
+
+    main();
+    ```
+  </Tab>
+</Tabs>
+
+To fetch a single ticker, pass the `currency_pair` parameter:
+
+```typescript
+const btcTicker = await client.getSpotTicker({ currency_pair: 'BTC_USDT' });
+console.log('BTC_USDT ticker:', btcTicker);
+```
+
+### Place a spot limit order
+
+`submitSpotOrder()` places an order on the spot market. This is a private endpoint — your client must be initialised with valid credentials.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+
+    const client = new RestClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
+
+    async function placeLimitOrder() {
+      try {
+        const order = await client.submitSpotOrder({
+          currency_pair: 'BTC_USDT',
+          type: 'limit',
+          account: 'spot',
+          side: 'buy',
+          amount: '0.001',
+          price: '45000',
+          time_in_force: 'gtc', // Good Till Cancelled
+        });
+
+        console.log('Order submitted:', order);
+      } catch (e) {
+        console.error('Order failed:', e);
+      }
+    }
+
+    placeLimitOrder();
+    ```
+  </Tab>
+  <Tab title="JavaScript (CommonJS)">
+    ```javascript
+    const { RestClient } = require('gateio-api');
+
+    const client = new RestClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
+
+    async function placeLimitOrder() {
+      try {
+        const order = await client.submitSpotOrder({
+          currency_pair: 'BTC_USDT',
+          type: 'limit',
+          account: 'spot',
+          side: 'buy',
+          amount: '0.001',
+          price: '45000',
+          time_in_force: 'gtc',
+        });
+
+        console.log('Order submitted:', order);
+      } catch (e) {
+        console.error('Order failed:', e);
+      }
+    }
+
+    placeLimitOrder();
+    ```
+  </Tab>
+</Tabs>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  Set `price` below the current market price when testing a buy order so it rests in the order book rather than filling immediately. Remember to cancel test orders when you're done.
 </Tip>
+
+### Subscribe to real-time WebSocket data
+
+Use the `WebsocketClient` to subscribe to live spot ticker updates. The client manages the connection automatically and emits data through Node.js events.
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    import { WebsocketClient } from 'gateio-api';
+
+    const ws = new WebsocketClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
+
+    // Listen for real-time updates
+    ws.on('update', (data) => {
+      console.log('WebSocket update:', data);
+    });
+
+    ws.on('open', ({ wsKey }) => {
+      console.log('Connection opened:', wsKey);
+    });
+
+    ws.on('response', (response) => {
+      console.log('Subscription response:', response);
+    });
+
+    ws.on('error', (err) => {
+      console.error('WebSocket error:', err);
+    });
+
+    // Subscribe to spot ticker updates for BTC_USDT and ETH_USDT
+    ws.subscribe(
+      {
+        topic: 'spot.tickers',
+        payload: ['BTC_USDT', 'ETH_USDT'],
+      },
+      'spotV4',
+    );
+    ```
+  </Tab>
+  <Tab title="JavaScript (CommonJS)">
+    ```javascript
+    const { WebsocketClient } = require('gateio-api');
+
+    const ws = new WebsocketClient({
+      apiKey: process.env.GATE_API_KEY,
+      apiSecret: process.env.GATE_API_SECRET,
+    });
+
+    ws.on('update', (data) => {
+      console.log('WebSocket update:', data);
+    });
+
+    ws.on('open', ({ wsKey }) => {
+      console.log('Connection opened:', wsKey);
+    });
+
+    ws.on('response', (response) => {
+      console.log('Subscription response:', response);
+    });
+
+    ws.on('error', (err) => {
+      console.error('WebSocket error:', err);
+    });
+
+    ws.subscribe(
+      {
+        topic: 'spot.tickers',
+        payload: ['BTC_USDT', 'ETH_USDT'],
+      },
+      'spotV4',
+    );
+    ```
+  </Tab>
+</Tabs>
+
+</Steps>
+
+## Fetch Spot Account Balances
+
+Once your client is authenticated, you can retrieve your spot account balances using `getSpotAccounts()`:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({
+  apiKey: process.env.GATE_API_KEY,
+  apiSecret: process.env.GATE_API_SECRET,
+});
+
+async function getBalances() {
+  try {
+    const balances = await client.getSpotAccounts();
+    console.log('Spot balances:', balances);
+  } catch (e) {
+    console.error('Error fetching balances:', e);
+  }
+}
+
+getBalances();
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card icon="key" title="Authentication" href="/authentication">
+    Understand HMAC signing, testnet configuration, and security best practices.
+  </Card>
+  <Card icon="book" title="Gate.com API Reference" href="https://www.gate.com/docs/developers/apiv4/en/">
+    Browse all available REST endpoints across every market.
+  </Card>
+</CardGroup>

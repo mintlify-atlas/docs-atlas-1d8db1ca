@@ -1,0 +1,159 @@
+---
+title: "RestClient: Unified REST API for All Gate.com Markets"
+sidebarTitle: "Overview"
+description: "The RestClient provides a single TypeScript interface to all Gate.com REST APIs — Spot, Margin, Futures, Options, CrossEx, Alpha, and OTC — with full type safety."
+---
+
+The `RestClient` is the single entry point for every Gate.com REST API. One class covers spot trading, margin borrowing, perpetual and delivery futures, options contracts, cross-exchange (CrossEx) routing, Alpha meme-token trading, OTC conversions, and all wallet/account management operations. Every request is fully typed — parameters and responses are defined in TypeScript interfaces so your IDE can autocomplete field names and flag type errors before you deploy.
+
+## Installation
+
+Install the SDK from npm and import `RestClient` in your project:
+
+```bash
+npm install gateio-api
+```
+
+<Tabs>
+  <Tab title="ESM / TypeScript">
+    ```typescript
+    import { RestClient } from 'gateio-api';
+    ```
+  </Tab>
+  <Tab title="CommonJS">
+    ```javascript
+    const { RestClient } = require('gateio-api');
+    ```
+  </Tab>
+</Tabs>
+
+## Instantiation
+
+Construct a `RestClient` by passing your API credentials through `RestClientOptions`. For public (unauthenticated) endpoints you can omit the credentials entirely.
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+// Authenticated client — API key and secret are automatically signed on every private request
+const client = new RestClient({
+  apiKey: process.env.API_KEY,
+  apiSecret: process.env.API_SECRET,
+});
+
+// Public-only client — no credentials required
+const publicClient = new RestClient();
+```
+
+<Note>
+  Credentials are read once at construction time. Never hard-code secrets in source code — use environment variables or a secrets manager.
+</Note>
+
+## Configuration Options
+
+`RestClient` accepts a `RestClientOptions` object as its first argument. The most commonly used fields are:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `apiKey` | `string` | — | Your Gate.com API key |
+| `apiSecret` | `string` | — | Your Gate.com API secret |
+| `baseUrl` | `string` | Gate production | Override the API base URL (e.g. for a proxy) |
+| `baseUrlKey` | `GateBaseUrlKey` | — | Select a named base-URL preset built into the SDK |
+| `recvWindow` | `number` | — | Global request-window override in milliseconds |
+| `strictParamValidation` | `boolean` | `false` | Throw on `undefined` parameters before signing |
+| `parseExceptions` | `boolean` | `true` | Post-process Axios errors into structured exceptions |
+| `keepAlive` | `boolean` | `false` | Enable HTTP keep-alive on the underlying Axios agent |
+| `customSignMessageFn` | `function` | — | Provide a custom HMAC signer (e.g. Node.js `createHmac`) |
+
+## Authentication
+
+Authentication is handled automatically. When you provide `apiKey` and `apiSecret`, the client signs every private request with an HMAC-SHA512 signature before it leaves your machine. You never need to construct `sign`, `timestamp`, or `KEY` headers yourself.
+
+```typescript
+// This private call is signed automatically — no extra work needed
+const account = await client.getFuturesAccount({ settle: 'usdt' });
+```
+
+Public endpoints (market data, tickers, order books) work without credentials:
+
+```typescript
+const tickers = await client.getSpotTicker({ currency_pair: 'BTC_USDT' });
+```
+
+## Finding the Right Method
+
+Every REST endpoint in the Gate.com API maps to a dedicated method on `RestClient`. The SDK ships with a full endpoint-to-function mapping in [`docs/endpointFunctionList.md`](https://github.com/tiagosiebler/gateio-api/blob/master/docs/endpointFunctionList.md). Search that file for an endpoint URL or an HTTP method name to find the corresponding SDK function.
+
+```typescript
+// Endpoint: GET /futures/{settle}/tickers
+// → client.getFuturesTickers({ settle: 'usdt' })
+
+// Endpoint: POST /spot/orders
+// → client.submitSpotOrder({ currency_pair: 'BTC_USDT', side: 'buy', ... })
+```
+
+## Error Handling
+
+The client uses Axios internally. When Gate.com returns a non-2xx status code the SDK throws an Axios error. Wrap calls in `try/catch` to handle failures gracefully:
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+try {
+  const order = await client.submitSpotOrder({
+    currency_pair: 'BTC_USDT',
+    side: 'buy',
+    type: 'limit',
+    amount: '0.001',
+    price: '60000',
+  });
+  console.log('Order placed:', order);
+} catch (err: any) {
+  // err.response.data contains the Gate.com error body
+  console.error('Gate API error:', err.response?.data ?? err.message);
+}
+```
+
+<Warning>
+  Always handle errors in production code. Unhandled promise rejections will crash Node.js processes.
+</Warning>
+
+## Market Areas Covered
+
+<CardGroup cols={2}>
+  <Card title="Spot Trading" icon="coins" href="/rest/spot-trading">
+    Place limit and market orders, query balances, fetch tickers and candles, and use price-triggered orders on Gate.com spot markets.
+  </Card>
+  <Card title="Margin Trading" icon="chart-line" href="/rest/margin-trading">
+    Manage isolated and cross margin accounts, borrow and repay loans, and query interest records.
+  </Card>
+  <Card title="Futures Trading" icon="chart-candlestick" href="/rest/futures-trading">
+    Trade perpetual and delivery futures contracts, manage positions and leverage, and access funding rates.
+  </Card>
+  <Card title="Options Trading" icon="sigma" href="/rest/options-trading">
+    List option contracts by expiry, manage option positions and orders, and query settlement history.
+  </Card>
+  <Card title="CrossEx Trading" icon="arrows-left-right" href="/rest/crossex-trading">
+    Route orders across Binance, OKX, Bybit, Kraken, and Gate from a single unified account.
+  </Card>
+  <Card title="Alpha & OTC" icon="bolt" href="/rest/alpha-otc-trading">
+    Trade meme tokens and new listings via Gate Alpha, or execute stablecoin and fiat conversions via OTC.
+  </Card>
+  <Card title="Wallet & Account" icon="wallet" href="/rest/wallet-account">
+    Manage deposits, withdrawals, sub-accounts, cross-account transfers, and unified account settings.
+  </Card>
+</CardGroup>
+
+## Checking Server Latency
+
+The `RestClient` includes a built-in latency helper that measures round-trip time to Gate's servers and warns you if your system clock is drifting:
+
+```typescript
+await client.fetchLatencySummary();
+// Logs one-way and round-trip latency, and warns if clock offset > 500 ms
+```
+
+<Tip>
+  If you see `timestamp outside recvWindow` errors, run `fetchLatencySummary()` to check your clock offset. A drift of more than 500 ms will cause authentication failures.
+</Tip>

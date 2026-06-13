@@ -1,0 +1,302 @@
+---
+title: "Alpha & OTC Trading on Gate.com"
+sidebarTitle: "Alpha & OTC"
+description: "Trade meme tokens and new listings via Gate.com Alpha, or execute fiat and stablecoin conversions via OTC — both accessible through the RestClient."
+---
+
+Gate.com offers two specialised trading products alongside its main spot and futures markets: **Alpha** for early-stage and meme token trading, and **OTC** for large-block fiat and stablecoin conversions. Both are accessible through the same `RestClient` with full TypeScript support.
+
+---
+
+## Alpha Trading
+
+Alpha is Gate.com's dedicated marketplace for meme tokens, newly launched projects, and high-volatility early-stage assets. Trades are executed at the best available price across on-chain liquidity pools. Orders use a quote → confirm workflow — you first preview a quote (including expected slippage) and then submit the order using the returned `quote_id`.
+
+<Note>
+  Alpha uses a smart-routing execution model. The `gas_mode` parameter controls whether the system picks the fastest route (`speed`) or applies your custom slippage tolerance (`custom`).
+</Note>
+
+### Discovering Currencies and Tickers
+
+These endpoints are public — no authentication required.
+
+```typescript
+import { RestClient } from 'gateio-api';
+
+const client = new RestClient();
+
+// GET /alpha/currencies — all tradable Alpha currencies
+const currencies = await client.getAlphaCurrencies();
+
+// Filter by a specific currency symbol
+const dogeInfo = await client.getAlphaCurrencies({
+  currency: 'DOGE',
+  limit: 10,
+  page: 1,
+});
+
+// GET /alpha/tickers — 24-hour stats for Alpha currencies
+const tickers = await client.getAlphaTickers();
+
+const dogeTicker = await client.getAlphaTickers({
+  currency: 'DOGE',
+  limit: 5,
+});
+```
+
+### Account Balance
+
+```typescript
+const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+// GET /alpha/accounts — your Alpha account balances
+const alphaAccounts = await client.getAlphaAccounts();
+
+// Account ledger (requires from timestamp)
+const ledger = await client.getAlphaAccountBook({
+  from: Math.floor(Date.now() / 1000) - 86400 * 7, // past 7 days
+  limit: 100,
+  page: 1,
+});
+```
+
+### The Quote → Order Workflow
+
+Alpha orders follow a two-step process: obtain a quote first, then submit the order with the returned `quote_id`.
+
+<Tabs>
+  <Tab title="Smart Mode (speed)">
+    ```typescript
+    // Step 1 — Preview quote (smart routing, auto slippage)
+    // POST /alpha/quote
+    const quote = await client.createAlphaQuote({
+      currency: 'PEPE',
+      side: 'buy',
+      amount: '100',  // 100 USDT to spend (side=buy → amount in quote currency)
+      gas_mode: 'speed',
+    });
+
+    console.log('Quote ID:', quote.quote_id);
+    console.log('Expected PEPE received:', quote.receive_amount);
+    console.log('Price impact:', quote.price_impact);
+
+    // Step 2 — Place order using the quote
+    // POST /alpha/orders
+    const order = await client.createAlphaOrder({
+      currency: 'PEPE',
+      side: 'buy',
+      amount: '100',
+      gas_mode: 'speed',
+      quote_id: quote.quote_id,
+    });
+
+    console.log('Order ID:', order.order_id);
+    console.log('Status:', order.status);
+    ```
+  </Tab>
+  <Tab title="Custom Slippage (custom)">
+    ```typescript
+    // Step 1 — Preview with custom slippage tolerance
+    const quote = await client.createAlphaQuote({
+      currency: 'DOGE',
+      side: 'sell',
+      amount: '10000', // sell 10000 DOGE (side=sell → amount in base currency)
+      gas_mode: 'custom',
+      slippage: '2',   // 2% slippage tolerance
+    });
+
+    // Step 2 — Confirm if price impact is acceptable
+    if (parseFloat(quote.price_impact) < 2) {
+      const order = await client.createAlphaOrder({
+        currency: 'DOGE',
+        side: 'sell',
+        amount: '10000',
+        gas_mode: 'custom',
+        slippage: '2',
+        quote_id: quote.quote_id,
+      });
+      console.log('Sell order placed:', order.order_id);
+    } else {
+      console.log('Price impact too high — skipping order');
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Querying Orders
+
+```typescript
+// GET /alpha/orders — your order history
+const orders = await client.getAlphaOrders({
+  currency: 'PEPE',
+  side: 'buy',
+  status: 2,    // 0=All, 1=Processing, 2=Successful, 3=Failed, 4=Cancelled
+  limit: 50,
+  page: 1,
+});
+
+// Single order by ID
+// GET /alpha/order
+const order = await client.getAlphaOrder({ order_id: '987654321' });
+console.log('Status:', order.status);
+console.log('Fill amount:', order.fill_amount);
+```
+
+---
+
+## OTC Trading
+
+Gate.com OTC supports **fiat on/off-ramp** (buy or sell crypto with bank transfers) and **stablecoin conversions** (e.g. USDT ↔ USDC at institutional rates). The OTC flow always starts with a quote request and then executes the order using the returned `quote_token`.
+
+<Note>
+  OTC fiat orders require a registered bank account. Use `getOTCBankList()` to retrieve your saved bank cards and their IDs before placing fiat orders.
+</Note>
+
+### Stablecoin Conversion Workflow
+
+<Steps>
+  <Step title="Request a Quote">
+    Call `createOTCQuote()` with `create_quote_token: '1'` to receive a binding `quote_token` valid for order placement.
+
+    ```typescript
+    const client = new RestClient({ apiKey: '...', apiSecret: '...' });
+
+    // POST /otc/quote
+    const quote = await client.createOTCQuote({
+      side: 'PAY',          // 'PAY' = you input pay amount; 'GET' = you input receive amount
+      pay_coin: 'USDT',
+      get_coin: 'USDC',
+      pay_amount: '1000',   // pay 1000 USDT, required when side='PAY'
+      create_quote_token: '1', // '1' = generate binding quote_token for order
+    });
+
+    console.log('Rate:', quote.rate);              // USDC per USDT
+    console.log('You receive:', quote.get_amount); // expected USDC
+    console.log('Quote token:', quote.quote_token);
+    console.log('Expires:', quote.quote_expire_time);
+    ```
+  </Step>
+  <Step title="Create the Order">
+    Pass the `quote_token` from step 1 to `createOTCStablecoinOrder()` to lock in the rate.
+
+    ```typescript
+    // POST /otc/stable_coin/order/create
+    const order = await client.createOTCStablecoinOrder({
+      pay_coin: 'USDT',
+      get_coin: 'USDC',
+      pay_amount: '1000',
+      side: quote.side,
+      quote_token: quote.quote_token,
+    });
+
+    console.log('OTC Order ID:', order.order_id);
+    console.log('Status:', order.status);
+    ```
+  </Step>
+  <Step title="Check Order Status">
+    Query your stablecoin order history to confirm completion.
+
+    ```typescript
+    // GET /otc/stable_coin/order/list
+    const orders = await client.getOTCStablecoinOrderList({
+      coin_name: 'USDC',
+      status: 'DONE',       // 'PROCESSING' | 'DONE' | 'FAILED'
+      page_size: '20',
+      page_number: '1',
+    });
+    ```
+  </Step>
+</Steps>
+
+### Fiat On-Ramp / Off-Ramp Workflow
+
+<Steps>
+  <Step title="Get Your Bank Card ID">
+    ```typescript
+    // GET /otc/bank/list — retrieve your saved bank accounts
+    const bankList = await client.getOTCBankList();
+    const defaultCard = bankList.data?.lists?.find((b) => b.is_default === 1);
+    const bankId = defaultCard?.id ?? defaultCard?.bank_id;
+    console.log('Default bank ID:', bankId);
+    ```
+  </Step>
+  <Step title="Request a Fiat Quote">
+    ```typescript
+    // POST /otc/quote — get a quote for buying BTC with EUR
+    const fiatQuote = await client.createOTCQuote({
+      side: 'GET',          // 'GET' = specify the crypto amount to receive
+      pay_coin: 'EUR',
+      get_coin: 'BTC',
+      get_amount: '0.01',   // receive 0.01 BTC, required when side='GET'
+      create_quote_token: '1',
+    });
+
+    console.log('You pay:', fiatQuote.pay_amount, 'EUR');
+    console.log('Quote token:', fiatQuote.quote_token);
+    ```
+  </Step>
+  <Step title="Create the Fiat Order">
+    ```typescript
+    // POST /otc/order/create
+    const fiatOrder = await client.createOTCFiatOrder({
+      type: 'BUY',                    // 'BUY' = on-ramp, 'SELL' = off-ramp
+      side: fiatQuote.side,
+      crypto_currency: 'BTC',
+      fiat_currency: 'EUR',
+      crypto_amount: fiatQuote.get_amount,
+      fiat_amount: fiatQuote.pay_amount,
+      quote_token: fiatQuote.quote_token,
+      bank_id: bankId,
+    });
+
+    console.log('Fiat Order ID:', fiatOrder.order_id);
+    ```
+  </Step>
+  <Step title="Mark as Paid (off-ramp)">
+    For off-ramp (SELL) orders, after initiating the bank transfer you must confirm payment with a receipt image.
+
+    ```typescript
+    // POST /otc/order/paid
+    await client.markOTCOrderAsPaid({
+      order_id: fiatOrder.order_id,
+      payment_receipt_file_key: 'your-uploaded-file-key', // file key from upload
+    });
+    ```
+  </Step>
+</Steps>
+
+### OTC Order History
+
+```typescript
+// Fiat order history
+// GET /otc/order/list
+const fiatOrders = await client.getOTCFiatOrderList({
+  type: 'BUY',
+  fiat_currency: 'EUR',
+  crypto_currency: 'BTC',
+  status: 'DONE',
+  pn: '1',
+  ps: '20',
+});
+
+// Single fiat order detail
+// GET /otc/order/detail
+const detail = await client.getOTCFiatOrderDetail({ order_id: '123456' });
+
+// Stablecoin order history
+const stablecoinOrders = await client.getOTCStablecoinOrderList({
+  coin_name: 'USDT',
+  status: 'DONE',
+});
+```
+
+### Cancelling OTC Orders
+
+```typescript
+// POST /otc/order/cancel
+await client.cancelOTCOrder({ order_id: '123456' });
+```
+
+<Warning>
+  OTC quotes are time-limited. The `quote_token` typically expires within 30 seconds. Ensure you call `createOTCFiatOrder()` or `createOTCStablecoinOrder()` immediately after receiving the quote.
+</Warning>
