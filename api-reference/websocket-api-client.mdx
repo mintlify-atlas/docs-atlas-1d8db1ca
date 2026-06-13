@@ -1,7 +1,7 @@
 ---
 title: "WebsocketAPIClient Class Reference for Gate.io SDK"
 sidebarTitle: "WebsocketAPIClient"
-description: "Reference for the Gate.io SDK WebsocketAPIClient — a promise-based REST-like interface for trading over WebSocket. Documents all spot and futures methods."
+description: "Reference for the Gate.io SDK WebsocketAPIClient — a promise-based interface for spot and futures trading over WebSocket with full TypeScript types."
 ---
 
 The `WebsocketAPIClient` is a high-level convenience wrapper around `WebsocketClient` that exposes Gate.io's WebSocket API as a set of typed, promise-returning methods. Instead of calling `sendWSAPIRequest()` directly with raw channel strings, you call named methods like `submitNewSpotOrder()` or `submitNewFuturesOrder()` and receive strongly-typed responses. Under the hood, every method delegates to the embedded `WebsocketClient`, so all the same connection management, auto-reconnect, and re-authentication logic applies.
@@ -508,7 +508,6 @@ console.log(`Futures order placed: ${futuresOrder.id}`);
 // Cancel it
 await wsApiClient.cancelFuturesOrder({
   order_id: futuresOrder.id,
-  settle: 'usdt',
 });
 
 // Or, route to the BTC-settled connection explicitly

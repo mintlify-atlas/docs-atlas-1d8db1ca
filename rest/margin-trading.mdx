@@ -73,7 +73,7 @@ Cross margin uses a single account balance as collateral for all positions. This
 const currencies = await client.getCrossMarginCurrencies();
 
 // Details for a specific currency
-const usdtInfo = await client.getCrossMarginCurrency('USDT');
+const usdtInfo = await client.getCrossMarginCurrency({ currency: 'USDT' });
 ```
 
 ### Account Overview
@@ -123,7 +123,7 @@ const activeLoans = await client.getCrossMarginBorrowHistory({
 });
 
 // Single loan by ID
-const loan = await client.getCrossMarginBorrowLoan('12345678');
+const loan = await client.getCrossMarginBorrowLoan({ loan_id: '12345678' });
 ```
 
 ### Repayment
@@ -179,7 +179,7 @@ Margin UNI is Gate.com's peer-to-pool lending market. You can borrow against spe
 const markets = await client.getLendingMarkets();
 
 // Single market detail
-const btcMarket = await client.getLendingMarket('BTC_USDT');
+const btcMarket = await client.getLendingMarket({ currency_pair: 'BTC_USDT' });
 ```
 
 ### Borrow or Repay

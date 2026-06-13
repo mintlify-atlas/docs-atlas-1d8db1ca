@@ -22,6 +22,10 @@ The `WebsocketClient` manages persistent WebSocket connections for real-time dat
 
 The `WebsocketAPIClient` wraps the WebSocket API in a promise-driven, REST-like interface. Instead of managing `sendWSAPIRequest` calls and matching async replies via event listeners, you `await` each call just as you would with a REST endpoint. The client automatically establishes, authenticates, and health-checks the underlying WebSocket connection on your behalf.
 
+### `DefaultLogger` and `WS_KEY_MAP`
+
+Two additional named exports complement the three client classes. `DefaultLogger` is the built-in logging object used internally by all clients. You can import it and selectively silence or override individual log levels — for example, disabling `silly`-level output in production — then pass the modified logger to a `WebsocketClient` constructor. `WS_KEY_MAP` is a constant map of every valid WebSocket connection key (such as `'spotV4'`, `'perpFuturesUSDTV4'`, `'deliveryFuturesUSDTV4'`). Use it to reference connection keys by name rather than hard-coding raw strings when subscribing to topics.
+
 ## Supported Markets & Products
 
 `gateio-api` provides full API coverage across all Gate.com trading products:

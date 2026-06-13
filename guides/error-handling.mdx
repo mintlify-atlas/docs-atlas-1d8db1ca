@@ -182,26 +182,21 @@ Both patterns work equally well. Choose the one that fits your codebase style.
 
 ## WebSocket Error Events
 
-The `WebsocketClient` extends Node.js `EventEmitter` and exposes two distinct error-related events:
+The `WebsocketClient` extends Node.js `EventEmitter` and exposes error-related events you can listen to for robust error handling:
 
 | Event | When it fires |
 |-------|---------------|
-| `error` | A raw WebSocket transport error occurred (e.g. connection refused, TLS failure). |
-| `exception` | The SDK encountered an internal error while processing a message, or your own event listener threw an exception. |
+| `exception` | The SDK encountered an error — including raw WebSocket transport errors (e.g. connection refused, TLS failure), internal message-processing failures, or an uncaught error thrown inside one of your own event handlers. |
+| `error` | Defined in the event type map for forward compatibility; subscribe to `exception` for active error handling. |
 
 ```typescript
 import { WebsocketClient } from 'gateio-api';
 
 const ws = new WebsocketClient({ apiKey: 'KEY', apiSecret: 'SECRET' });
 
-// Transport-level errors
-ws.on('error', (err) => {
-  console.error('WebSocket transport error:', err);
-});
-
-// SDK-level exceptions (includes exceptions thrown inside your own handlers)
+// SDK-level exceptions — transport errors, parse failures, and handler errors all route here
 ws.on('exception', (err) => {
-  console.error('WebSocket SDK exception:', err);
+  console.error('WebSocket exception:', err);
 });
 
 // Subscribe to a topic
@@ -209,7 +204,7 @@ ws.subscribeTopic('spotV4', 'spot.tickers', ['BTC_USDT']);
 ```
 
 <Note>
-  The `exception` event also fires when an uncaught error is thrown inside any of your own `update`, `response`, or `authenticated` event handlers. This helps centralise error logging without silently dropping events.
+  The `exception` event fires for all WebSocket error conditions: raw transport errors (`onerror`), internal SDK processing failures, and uncaught errors thrown inside your own `update`, `response`, or `authenticated` event handlers. This centralises error logging in a single handler.
 </Note>
 
 ---

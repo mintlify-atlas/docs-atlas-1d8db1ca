@@ -1,7 +1,7 @@
 ---
-title: "WebSocket Client Overview for Gate.io SDK"
+title: "Gate.io SDK WebSocket Client: Overview, Keys & Events"
 sidebarTitle: "Overview"
-description: "The WebsocketClient provides persistent, auto-reconnecting WebSocket connections to Gate.com streams. Learn the core concepts, WsKey system, and event model."
+description: "The WebsocketClient manages persistent WebSocket connections to Gate.com. Learn WsKey routing, event handling, authentication, and configuration options."
 ---
 
 The `WebsocketClient` is the core class for all real-time streaming in the `gateio-api` SDK. It manages persistent WebSocket connections to Gate.com's various server endpoints, handles authentication for private streams, automatically reconnects when a connection drops, and delivers market data and account events through a familiar Node.js `EventEmitter` interface. Whether you need live ticker prices, order book updates, or private order and balance notifications, the `WebsocketClient` is your single entry point.
@@ -46,7 +46,7 @@ ws.subscribe('spot.tickers', 'spotV4');
 | `close` | A connection closes (expected or unexpected) | `{ wsKey, event }` |
 | `reconnected` | Auto-reconnect succeeded | `{ wsKey, event, wsUrl, ws }` |
 | `reconnect` | Auto-reconnect is about to be attempted | `{ wsKey, event }` |
-| `authenticated` | The connection has been authenticated | `{ wsKey }` |
+| `authenticated` | The connection has been authenticated | `{ wsKey, event }` |
 | `exception` | An internal SDK exception occurred | `{ wsKey, ...details }` |
 | `error` | A raw WebSocket-level error occurred | error object |
 
@@ -131,6 +131,20 @@ const ws = new WebsocketClient({
   // Automatically re-authenticate the WS API connection after a reconnect
   // Default: false
   reauthWSAPIOnReconnect: true,
+
+  // Optional: override the WebSocket URL for a specific connection
+  wsUrl: undefined,
+
+  // Optional: additional options forwarded to the underlying WebSocket constructor
+  // (e.g. custom agent, protocols)
+  wsOptions: undefined,
+
+  // Optional: additional options forwarded to every HTTP/fetch request
+  requestOptions: {},
+
+  // Optional: replace the built-in HMAC-SHA512 signing function with your own
+  // implementation (e.g. Node's faster crypto.createHmac)
+  customSignMessageFn: undefined,
 });
 ```
 

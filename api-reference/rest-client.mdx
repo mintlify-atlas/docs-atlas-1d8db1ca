@@ -1,7 +1,7 @@
 ---
-title: "RestClient Class Reference for Gate.io SDK"
+title: "Gate.io SDK RestClient Class: Methods and Usage Reference"
 sidebarTitle: "RestClient"
-description: "Complete reference for the Gate.io SDK RestClient class — constructor options, all product area method groups, authentication, and TypeScript type support."
+description: "Reference for the Gate.io SDK RestClient — constructor options, every product area method group, authentication handling, and TypeScript type support."
 ---
 
 The `RestClient` class is the primary entry point for all REST API interactions with Gate.io. It covers every product area the exchange offers — from spot and margin trading to futures, delivery, options, wallet management, sub-accounts, and beyond. Every method returns a `Promise`, making it fully compatible with `async/await` patterns in both Node.js and browser environments.
@@ -324,7 +324,7 @@ await client.submitCrossMarginBorrowLoan({
 | `cancelFuturesOrder(params)` | 🔒 | Cancel a single futures order |
 | `updateFuturesOrder(params)` | 🔒 | Amend a futures order |
 | `getFuturesTradingHistory(params)` | 🔒 | Get personal trade history |
-| `submitFuturesTriggeredOrder(params)` | 🔒 | Place a price-triggered order |
+| `submitFuturesPriceTriggeredOrder(params)` | 🔒 | Place a price-triggered order |
 | `batchCancelFuturesOrders(params)` | 🔒 | Cancel multiple futures orders |
 | `batchUpdateFuturesOrders(params)` | 🔒 | Amend multiple futures orders |
 | `createTrailOrder(params)` | 🔒 | Create a trailing order |

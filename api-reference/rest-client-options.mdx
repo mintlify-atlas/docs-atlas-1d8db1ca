@@ -1,7 +1,7 @@
 ---
 title: "RestClientOptions: Configuration Reference for Gate.io SDK"
 sidebarTitle: "RestClientOptions"
-description: "Full reference for all RestClientOptions fields accepted by the Gate.io SDK RestClient constructor — API keys, base URL, timeouts, proxy, and validation settings."
+description: "Full reference for all RestClientOptions fields in the Gate.io SDK — API keys, base URL overrides, keep-alive, timeout, and custom signing settings."
 ---
 
 The `RestClientOptions` interface controls how the `RestClient` connects to Gate.io's REST API. You pass a plain object that satisfies this interface as the first argument to the `RestClient` constructor. Every field is optional — the client works out of the box without any configuration for public endpoints, and only requires `apiKey` and `apiSecret` for authenticated calls.

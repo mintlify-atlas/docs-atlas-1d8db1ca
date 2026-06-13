@@ -1,7 +1,7 @@
 ---
-title: "WebSocket API: Trade Over WebSocket on Gate.com"
+title: "WebSocket API: Place Orders in Real Time on Gate.com"
 sidebarTitle: "WebSocket API"
-description: "Use Gate.com's WebSocket API to place and cancel orders in real time. Choose between event-driven (sendWSAPIRequest) and promise-based (WebsocketAPIClient) interfaces."
+description: "Place and cancel orders over WebSocket on Gate.com. Use sendWSAPIRequest for event-driven calls or WebsocketAPIClient for a promise-based REST-like API."
 ---
 
 Gate.com's WebSocket API lets you send trading commands — place orders, cancel orders, amend orders, query order status — over the same persistent WebSocket connection used for data streams. Because the commands travel over an already-open socket rather than opening a new HTTP connection for each request, round-trip latency is significantly lower than a traditional REST call. The `gateio-api` SDK exposes this capability through two complementary interfaces: a lower-level **event-driven** method on `WebsocketClient`, and a higher-level **promise-based** `WebsocketAPIClient` that feels almost identical to a REST client.

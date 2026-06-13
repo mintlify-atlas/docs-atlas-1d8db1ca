@@ -1,7 +1,7 @@
 ---
-title: "WebsocketClient Class Reference for Gate.io SDK"
+title: "Gate.io SDK WebsocketClient Class: Methods and Events"
 sidebarTitle: "WebsocketClient"
-description: "Complete reference for the Gate.io SDK WebsocketClient class — constructor, subscribe/unsubscribe methods, event emitter API, and WebSocket API integration."
+description: "Reference for the Gate.io SDK WebsocketClient — constructor options, subscribe/unsubscribe methods, all emitted events, and WebSocket API integration."
 ---
 
 The `WebsocketClient` class manages persistent WebSocket connections to Gate.io's market data and private account streams. It handles authentication, heartbeat ping/pong cycles, automatic reconnection with topic re-subscription, and routing of both public and private topic subscriptions to the correct underlying connection. It also exposes a `sendWSAPIRequest()` method for executing REST-like trading commands entirely over WebSocket.
@@ -55,6 +55,10 @@ new WebsocketClient(options?: WSClientConfigurableOptions, logger?: DefaultLogge
 
   <ParamField path="wsUrl" type="string" optional>
     Override the WebSocket URL for all connections. Useful for proxying through a custom gateway.
+  </ParamField>
+
+  <ParamField path="requestOptions" type="object" optional>
+    Low-level request options passed to the underlying HTTP agent used for the WebSocket upgrade handshake.
   </ParamField>
 
   <ParamField path="wsOptions" type="object" optional>
@@ -226,11 +230,21 @@ wsClient.on('update', (data) => {
 
 ### `open`
 
-Emitted when a WebSocket connection is successfully established.
+Emitted when a WebSocket connection is successfully established for the first time. If a connection drops and is re-established, expect the `reconnected` event instead.
 
 ```typescript
 wsClient.on('open', ({ wsKey, event }) => {
   console.log(`Connection opened: ${wsKey}`);
+});
+```
+
+### `reconnect`
+
+Emitted when the SDK begins attempting to reconnect a dropped connection. This fires before the new connection is established; listen for `reconnected` to confirm the reconnection succeeded.
+
+```typescript
+wsClient.on('reconnect', ({ wsKey }) => {
+  console.log(`Reconnecting: ${wsKey}...`);
 });
 ```
 
@@ -333,6 +347,10 @@ wsClient.on('authenticated', ({ wsKey }) => {
 
 wsClient.on('exception', (data) => {
   console.error('Exception:', JSON.stringify(data));
+});
+
+wsClient.on('reconnect', ({ wsKey }) => {
+  console.log(`Reconnecting: ${wsKey}...`);
 });
 
 wsClient.on('reconnected', ({ wsKey }) => {

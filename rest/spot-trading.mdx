@@ -64,7 +64,7 @@ const trades = await client.getSpotTrades({
 const pairs = await client.getSpotCurrencyPairs();
 
 // Single pair detail
-const pair = await client.getSpotCurrencyPair('BTC_USDT');
+const pair = await client.getSpotCurrencyPair({ currency_pair: 'BTC_USDT' });
 ```
 
 ## Account Queries

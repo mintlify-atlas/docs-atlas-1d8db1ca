@@ -31,24 +31,20 @@ export type DefaultLogger = typeof DefaultLogger;
 Out of the box, only `info` and `error` produce output. The `trace` level is a no-op so that internal SDK diagnostics remain silent until you explicitly enable them.
 
 <Note>
-  The README and rest of the SDK also document the levels `silly`, `debug`, `notice`, and `warning`. When you pass a custom logger object you can implement any or all of these levels — the SDK calls whichever methods exist on the object you provide.
+  `DefaultLogger` has exactly three methods: `trace`, `info`, and `error`. These are the only log-level methods the SDK calls internally. When you pass a custom logger object you only need to implement these three methods — any additional methods will never be invoked by the SDK.
 </Note>
 
 ---
 
 ## Log Levels
 
-The following log levels are used throughout the SDK (listed from most verbose to least verbose):
+The following log levels are called by the SDK internally (listed from most verbose to least verbose):
 
-| Level | Purpose |
-|-------|---------|
-| `silly` | Extremely detailed internal trace data (ping/pong cycles, raw message bytes, etc.) |
-| `debug` | Diagnostic information useful during development |
-| `trace` | Low-level execution tracing (used in `DefaultLogger`) |
-| `notice` | Notable events that are not errors (e.g. reconnection attempts) |
-| `info` | General informational messages |
-| `warning` | Non-fatal issues that may require attention |
-| `error` | Errors that require immediate attention |
+| Level | DefaultLogger behaviour | Purpose |
+|-------|------------------------|---------|
+| `trace` | Silent (no-op) | Low-level execution tracing — WebSocket ping/pong cycles, message routing, connection events |
+| `info` | `console.info(...)` | General informational messages — connection open/close, reconnection attempts |
+| `error` | `console.error(...)` | Errors that require attention — failed sends, parse failures, auth errors |
 
 ---
 
@@ -120,18 +116,14 @@ GATETRACE=1 node ./myBot.js
 
 ## Creating a Fully Custom Logger
 
-To route logs to a different destination or format, create an object that implements all the log level methods and pass it directly to any client constructor:
+To route logs to a different destination or format, create an object that implements the three log level methods and pass it directly to any client constructor:
 
 ```typescript
 import { WebsocketClient } from 'gateio-api';
 
 const myLogger = {
-  silly:   (...params: unknown[]) => { /* discard */ },
-  debug:   (...params: unknown[]) => console.debug('[gateio:debug]', ...params),
   trace:   (...params: unknown[]) => console.debug('[gateio:trace]', ...params),
-  notice:  (...params: unknown[]) => console.log('[gateio:notice]', ...params),
   info:    (...params: unknown[]) => console.info('[gateio:info]', ...params),
-  warning: (...params: unknown[]) => console.warn('[gateio:warning]', ...params),
   error:   (...params: unknown[]) => console.error('[gateio:error]', ...params),
 };
 
@@ -161,12 +153,8 @@ const ws = new WebsocketClient(
     });
 
     const gateLogger = {
-      silly:   (...p: unknown[]) => winstonLogger.silly(String(p[0]), p.slice(1)),
-      debug:   (...p: unknown[]) => winstonLogger.debug(String(p[0]), p.slice(1)),
       trace:   (...p: unknown[]) => winstonLogger.debug(String(p[0]), p.slice(1)),
-      notice:  (...p: unknown[]) => winstonLogger.info(String(p[0]), p.slice(1)),
       info:    (...p: unknown[]) => winstonLogger.info(String(p[0]), p.slice(1)),
-      warning: (...p: unknown[]) => winstonLogger.warn(String(p[0]), p.slice(1)),
       error:   (...p: unknown[]) => winstonLogger.error(String(p[0]), p.slice(1)),
     };
 
@@ -184,12 +172,8 @@ const ws = new WebsocketClient(
     const pinoLogger = pino({ level: 'info' });
 
     const gateLogger = {
-      silly:   (...p: unknown[]) => pinoLogger.trace({ data: p }, String(p[0])),
-      debug:   (...p: unknown[]) => pinoLogger.debug({ data: p }, String(p[0])),
       trace:   (...p: unknown[]) => pinoLogger.trace({ data: p }, String(p[0])),
-      notice:  (...p: unknown[]) => pinoLogger.info({ data: p }, String(p[0])),
       info:    (...p: unknown[]) => pinoLogger.info({ data: p }, String(p[0])),
-      warning: (...p: unknown[]) => pinoLogger.warn({ data: p }, String(p[0])),
       error:   (...p: unknown[]) => pinoLogger.error({ data: p }, String(p[0])),
     };
 
@@ -203,14 +187,10 @@ const ws = new WebsocketClient(
     ```typescript
     import { WebsocketClient } from 'gateio-api';
 
-    // Minimal logger — only warnings and errors reach the console
+    // Minimal logger — only errors reach the console
     const quietLogger = {
-      silly:   (..._p: unknown[]) => {},
-      debug:   (..._p: unknown[]) => {},
       trace:   (..._p: unknown[]) => {},
-      notice:  (..._p: unknown[]) => {},
       info:    (..._p: unknown[]) => {},
-      warning: (...p: unknown[]) => console.warn('[gateio]', ...p),
       error:   (...p: unknown[]) => console.error('[gateio]', ...p),
     };
 
@@ -237,12 +217,8 @@ const ws1 = new WebsocketClient({ apiKey: 'KEY', apiSecret: 'SECRET' }, DefaultL
 
 // Option 3 — Pass a fully custom logger object
 const ws2 = new WebsocketClient({ apiKey: 'KEY', apiSecret: 'SECRET' }, {
-  silly:   () => {},
-  debug:   (...p) => console.debug(...p),
   trace:   (...p) => console.debug(...p),
-  notice:  (...p) => console.log(...p),
   info:    (...p) => console.info(...p),
-  warning: (...p) => console.warn(...p),
   error:   (...p) => console.error(...p),
 });
 ```

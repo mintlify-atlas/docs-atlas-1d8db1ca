@@ -133,8 +133,7 @@ const marketBuy = await client.createCrossExOrder({
 
 ```typescript
 // PUT /crossex/orders/{order_id}
-await client.modifyCrossExOrder({
-  order_id: '123456789',
+await client.modifyCrossExOrder('123456789', {
   qty: '0.002',
   price: '61000',
 });

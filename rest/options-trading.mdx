@@ -43,7 +43,7 @@ const contracts = await client.getOptionsContracts({
 });
 
 // Single contract details
-const contract = await client.getOptionsContract('BTC_USDT-20240328-60000-C');
+const contract = await client.getOptionsContract({ contract: 'BTC_USDT-20240328-60000-C' });
 ```
 
 <Note>
@@ -72,7 +72,7 @@ const tickers = await client.getOptionsTickers({
 });
 
 // Underlying-level ticker (combines calls + puts)
-const underlyingTicker = await client.getOptionsUnderlyingTicker('BTC_USDT');
+const underlyingTicker = await client.getOptionsUnderlyingTicker({ underlying: 'BTC_USDT' });
 ```
 
 ### Candles
@@ -141,9 +141,9 @@ const positions = await client.getOptionsPositionsUnderlying({
 
 // Single position by contract
 // GET /options/positions/{contract}
-const btcCallPosition = await client.getOptionsPositionContract(
-  'BTC_USDT-20240328-60000-C',
-);
+const btcCallPosition = await client.getOptionsPositionContract({
+  contract: 'BTC_USDT-20240328-60000-C',
+});
 console.log('Size:', btcCallPosition.size);
 console.log('Entry price:', btcCallPosition.entry_price);
 
@@ -193,7 +193,7 @@ const finishedOrders = await client.getOptionsOrders({
 
 // Single order by ID
 // GET /options/orders/{order_id}
-const order = await client.getOptionsOrder(987654321);
+const order = await client.getOptionsOrder({ order_id: 987654321 });
 ```
 
 ### Amending an Order
@@ -201,6 +201,7 @@ const order = await client.getOptionsOrder(987654321);
 ```typescript
 // PUT /options/orders/{order_id}
 await client.amendOptionsOrder({
+  order_id: 987654321,
   contract: 'BTC_USDT-20240328-60000-C',
   price: '480',   // new price
   size: 10,       // new size
@@ -212,7 +213,7 @@ await client.amendOptionsOrder({
 ```typescript
 // Cancel a single order
 // DELETE /options/orders/{order_id}
-await client.cancelOptionsOrder(987654321);
+await client.cancelOptionsOrder({ order_id: 987654321 });
 
 // Cancel all open orders for an underlying
 // DELETE /options/orders

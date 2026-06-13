@@ -1,5 +1,5 @@
 ---
-title: "Authenticate with the Gate.io API SDK"
+title: "API Key Authentication with the Gate.io SDK for Gate.com"
 sidebarTitle: "Authentication"
 description: "Generate Gate.com API credentials, pass them to the SDK, and understand how HMAC signing works for REST requests and WebSocket connections."
 ---
@@ -116,6 +116,26 @@ These are the authentication-related fields in the `RestClientOptions` interface
 
 <ParamField body="strictParamValidation" type="boolean" default="false">
   When set to `true`, the SDK throws an error if any parameter passed to a request method is `undefined`. This can help catch bugs during development where a variable is accidentally left uninitialised before being passed to an API call.
+</ParamField>
+
+<ParamField body="baseUrl" type="string">
+  Override the default REST API base URL entirely. Use this when pointing at a custom proxy or local mock server. Example: `'https://api.gate.io'`. When set, `baseUrlKey` is ignored.
+</ParamField>
+
+<ParamField body="baseUrlKey" type="'live' | 'futuresLiveAlternative' | 'futuresTestnet'">
+  Select one of the built-in base URL presets instead of the default live endpoint. Use `'futuresTestnet'` to target the futures testnet at `https://fx-api-testnet.gateio.ws/api/v4`. Ignored if `baseUrl` is also set.
+</ParamField>
+
+<ParamField body="parseExceptions" type="boolean" default="true">
+  When `true` (the default), the SDK post-processes request errors and throws them as structured exceptions. Set to `false` to receive raw Axios error objects instead.
+</ParamField>
+
+<ParamField body="keepAlive" type="boolean">
+  Enable HTTP keep-alive for REST API requests made via Axios. Keeping the underlying TCP connection open between requests reduces latency for workloads that make many sequential calls. Disabled by default.
+</ParamField>
+
+<ParamField body="keepAliveMsecs" type="number" default="1000">
+  When `keepAlive` is `true`, controls how often (in milliseconds) TCP keep-alive packets are sent over idle sockets. Only relevant if `keepAlive` is enabled.
 </ParamField>
 
 <ParamField body="customSignMessageFn" type="(message: string, secret: string) => Promise<string>">
